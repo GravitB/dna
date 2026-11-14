@@ -1,3 +1,4 @@
+import DnaExplorer from "./DnaExplorer";
 import { useEffect, useRef, useState } from "react";
 import {
   CartesianGrid,
@@ -835,6 +836,7 @@ function ArchiveView({ id }: { id: string }) {
               </table>
             </div>
           </section>
+          <DnaExplorer job={job} />
           {p.needs_retest && (
             <div className="info">
               Available locations have changed since the latest recovery test.

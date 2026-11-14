@@ -20,6 +20,9 @@ Built on [Erbgut](https://github.com/timarnoldev/hackmit2026) (HackMIT 2026). Er
 DNA Fountain encoder, the sequencing simulators calibrated on real Nanopore reads, and the CNN decoder
 that we use unchanged. See [Credits](#credits).
 
+Approved archives include an interactive [DNA viewer](docs/VISUAL_DNA.md), powered by locally hosted
+oxView. Explore the archive's saved DNA sequences in 3D or animate a strand being built.
+
 ---
 
 ## How it works
