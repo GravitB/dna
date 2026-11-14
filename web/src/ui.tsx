@@ -189,55 +189,8 @@ export function useParallax<T extends HTMLElement>() {
 /* Counts up from zero the first time the number scrolls into view, then
  * eases between values. Without IntersectionObserver or with reduced motion it
  * simply shows the value. */
-export function CountUp({
-  value,
-  format = (n: number) => Math.round(n).toLocaleString(),
-  duration = 1000,
-}: {
-  value: number;
-  format?: (n: number) => string;
-  duration?: number;
-}) {
-  const canAnimate =
-    typeof IntersectionObserver !== "undefined" &&
-    typeof requestAnimationFrame === "function" &&
-    !reducedMotion();
-  const ref = useRef<HTMLSpanElement>(null);
-  const [n, setN] = useState(canAnimate ? 0 : value);
-  const shown = useRef(canAnimate ? 0 : value);
-  const [seen, setSeen] = useState(!canAnimate);
-  useEffect(() => {
-    if (seen || !ref.current) return;
-    const io = new IntersectionObserver((es) => {
-      if (es.some((e) => e.isIntersecting)) {
-        setSeen(true);
-        io.disconnect();
-      }
-    });
-    io.observe(ref.current);
-    return () => io.disconnect();
-  }, [seen]);
-  useEffect(() => {
-    if (!seen) return;
-    if (!canAnimate || shown.current === value) {
-      shown.current = value;
-      setN(value);
-      return;
-    }
-    const from = shown.current;
-    const t0 = performance.now();
-    let raf = 0;
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - t0) / duration);
-      const v = from + (value - from) * (1 - Math.pow(1 - k, 3));
-      shown.current = v;
-      setN(v);
-      if (k < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value, seen]);
-  return <span ref={ref} className="count">{format(n)}</span>;
+export function CountUp({ value, format = (n: number) => Math.round(n).toLocaleString() }: { value: number; format?: (n: number) => string; duration?: number }) {
+  return <span className="count">{format(value)}</span>;
 }
 
 /* --------------------------------------------------------- status + phase */

@@ -1,6 +1,6 @@
-"""Thin wrapper over the Erbgut codec (dnacodec). The only module in Lazarus that imports it.
+"""Thin wrapper over the the bundled codec codec (dna_codec). The only module in Lazarus that imports it.
 
-Everything DNA-related goes through Erbgut's own functions:
+Everything DNA-related goes through the bundled codec’s own functions:
 encode / recover (Fountain code), simulate (calibrated channel), simulator_b (red-team channel),
 MajorityVoteDecoder (baseline) and PolishDecoder (1D CNN trained on real Nanopore reads).
 """
@@ -17,20 +17,20 @@ from typing import Sequence
 
 import numpy as np
 
-from dnacodec import simulator as sim_a
-from dnacodec import simulator_b as sim_b
-from dnacodec.baseline import MajorityVoteDecoder
-from dnacodec.encoder import encode, payload_bits_per_base, recover
-from dnacodec.profiles import SituationProfile, load_profile
-from dnacodec.seeds import train_seed
-from dnacodec.types import EncodedFile, EncoderSettings, FileMeta
+from dna_codec import simulator as sim_a
+from dna_codec import simulator_b as sim_b
+from dna_codec.baseline import MajorityVoteDecoder
+from dna_codec.encoder import encode, payload_bits_per_base, recover
+from dna_codec.profiles import SituationProfile, load_profile
+from dna_codec.seeds import train_seed
+from dna_codec.types import EncodedFile, EncoderSettings, FileMeta
 
-ERBGUT_DIR = Path(__file__).resolve().parents[2] / "vendor" / "hackmit2026-main"
-POLISH_CHECKPOINT = Path(os.environ.get("LAZARUS_POLISH_CKPT", ERBGUT_DIR / "checkpoints/polish/polish.pt"))
+CODEC_DIR = Path(__file__).resolve().parents[1]
+POLISH_CHECKPOINT = Path(os.environ.get("LAZARUS_POLISH_CKPT", CODEC_DIR / "checkpoints/polish/polish.pt"))
 
-# Base profiles shipped with Erbgut, calibrated on real reads (nanopore) or literature (illumina).
+# Base profiles shipped with the bundled codec, calibrated on real reads (nanopore) or literature (illumina).
 BASE_PROFILES = {"nanopore": "nanopore_budget", "illumina": "illumina_standard"}
-# Extra strand loss per year of storage. Erbgut's century archive profile uses 0.002/year.
+# Extra strand loss per year of storage. the bundled codec’s century archive profile uses 0.002/year.
 # Extrapolated, not measured: always labeled "modeled" in the UI.
 DECAY_PER_YEAR = 0.002
 
@@ -55,7 +55,7 @@ def settings_to_dict(s: EncoderSettings) -> dict:
 
 
 def make_profile(tech: str, years: float, coverage: float) -> SituationProfile:
-    """Erbgut profile for the vendor's read technology, stretched to the retention horizon."""
+    """the bundled codec profile for the vendor's read technology, stretched to the retention horizon."""
     if tech not in BASE_PROFILES:
         raise ValueError(f"tech must be one of {sorted(BASE_PROFILES)}")
     base = load_profile(BASE_PROFILES[tech])
@@ -84,7 +84,7 @@ _polish_lock = threading.Lock()
 
 @lru_cache(maxsize=1)
 def _polish():
-    from dnacodec.model.polish import PolishDecoder
+    from dna_codec.model.polish import PolishDecoder
 
     import torch
 
@@ -150,7 +150,7 @@ def run_trials(
     """Encode once, then run `trials` independent sequencing passes and count exact recoveries.
 
     data may be one pool or a list of pools (a whole archive): a trial only counts as recovered
-    when every pool comes back byte-exact. Uses train seeds only (Erbgut seed discipline).
+    when every pool comes back byte-exact. Uses train seeds only (the bundled codec seed discipline).
     lost_vaults removes every strand stored in the first `lost_vaults` of `n_vaults` vaults.
     """
     t0 = time.time()
@@ -193,7 +193,7 @@ def run_trials(
 
 
 def costs(meta: FileMeta, n_strands: int, profile: SituationProfile) -> dict:
-    """Modeled costs from Erbgut's profile prices (placeholders, never quoted as real)."""
+    """Modeled costs from the bundled codec’s profile prices (placeholders, never quoted as real)."""
     bases = n_strands * meta.settings.strand_length
     bpb = payload_bits_per_base(meta, n_strands)
     bases_per_mb = 8e6 / bpb if bpb > 0 else float("inf")

@@ -165,7 +165,7 @@ function Step1({ id, dna }: { id: string; dna: DnaExport }) {
       </dl>
       <p className="fine">
         {c.data_strands} data + {c.manifest_strands_per_vault} manifest strands per vault ·{" "}
-        {c.total_nucleotides.toLocaleString()} nt · Erbgut DNA Fountain ·{" "}
+        {c.total_nucleotides.toLocaleString()} nt · the bundled codec DNA Fountain ·{" "}
         {Object.entries(dna.export.encoder_configuration.pools)
           .map(([p, m]) => `${p}: ${m.n_chunks} chunks`)
           .join(", ")}{" "}
@@ -315,7 +315,7 @@ function SimForm({
     <div className="dna-step">
       <h3>Simulate storage and sequencing damage</h3>
       <p>
-        Sends the exact Step 1 sequences through Erbgut’s channel simulator:
+        Sends the exact Step 1 sequences through the bundled codec’s channel simulator:
         substitutions, insertions, deletions, strand dropout and storage decay,
         with several noisy reads per strand. The same seed always gives the same
         reads.
@@ -459,7 +459,7 @@ function Step2({
     <div className="dna-step">
       <h3>Step 2 — Damaged DNA (Post-Simulation)</h3>
       <div className="info warn">
-        Simulated damage produced by Erbgut’s sequencing/storage model. These
+        Simulated damage produced by the bundled codec’s sequencing/storage model. These
         are not laboratory results, and one simulated trial does not prove
         long-term physical recoverability.
       </div>
@@ -967,7 +967,7 @@ export function DecoderPage({ query }: { query: string }) {
               <option value="both">Both, reported separately</option>
               <option value="baseline">Majority vote (baseline)</option>
               <option value="polish" disabled={caps ? !caps.decoders.polish.available : false}>
-                Erbgut CNN PolishDecoder
+                the bundled codec CNN PolishDecoder
                 {caps && !caps.decoders.polish.available ? " (unavailable)" : ""}
               </option>
             </select>

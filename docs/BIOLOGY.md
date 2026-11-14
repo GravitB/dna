@@ -2,7 +2,7 @@
 
 DNA data storage combines computer science, biology, chemistry and error-correcting algorithms. This
 guide needs no biology background. It covers the fundamentals, what happens when a computer file is
-converted into DNA, why errors occur, how DNA is read, and what problem Erbgut (and therefore Lazarus)
+converted into DNA, why errors occur, how DNA is read, and what problem the bundled codec (and therefore Lazarus)
 solves.
 
 ---
@@ -91,7 +91,7 @@ equipment).
 
 **Why bother?** DNA has extraordinarily high theoretical information density and can last a long time,
 which makes it promising for dense, long-term archives. The catch: DNA is much harder to write and read
-reliably than a hard drive. That is where Erbgut's core problem begins.
+reliably than a hard drive. That is where the bundled codec’s core problem begins.
 
 ---
 
@@ -297,7 +297,7 @@ algorithms, not biological processes: biology introduces the uncertainty, and th
 
 ---
 
-## 14. What Erbgut improves
+## 14. What the bundled codec improves
 
 Researchers already follow biological rules when encoding: limit homopolymers, restrict GC content, avoid
 troublesome structures, and add redundancy. But each rule is a compromise:
@@ -374,18 +374,18 @@ recover information in it.
 
 ## 17. How this maps to Lazarus
 
-| Biology concept | Where it lives in Lazarus / Erbgut |
+| Biology concept | Where it lives in Lazarus / bundled codec |
 |---|---|
-| 2 bits per base, strands, oligos | Erbgut encoder: 110-base strands, 16-base seed + payload (`dnacodec/encoder.py`) |
+| 2 bits per base, strands, oligos | the bundled codec encoder: 110-base strands, 16-base seed + payload (`dna_codec/encoder.py`) |
 | Homopolymer limit | `EncoderSettings.max_homopolymer` (default 3); the encoder rejects candidate strands that break it |
 | GC content range | `EncoderSettings.gc_min` / `gc_max` (default 40–60%) |
-| Substitutions, insertions, deletions | Erbgut channel simulator, rates per technology (`profiles/nanopore_budget.json`, `illumina_standard.json`) |
+| Substitutions, insertions, deletions | the bundled codec channel simulator, rates per technology (`profiles/nanopore_budget.json`, `illumina_standard.json`) |
 | Homopolymer errors in nanopore | `homopolymer_run_factors` in the nanopore profile |
 | Dropout and degradation | `dropout_rate` + `decay_per_year × storage_years` in the profile; Lazarus sets years from the retention policy |
 | Sequencing depth | "coverage" / planned reads per strand, a design knob the agent tunes |
 | Logical redundancy + ECC | Fountain code (`redundancy`), CRC-16 per strand, CRC-32 per pool |
 | Physical redundancy | Spreading strands across vault sites; every vault holds a full copy of the manifest |
-| Basecalling / decoding noisy reads | Majority-vote decoder and Erbgut's CNN polisher trained on real Nanopore reads |
+| Basecalling / decoding noisy reads | Majority-vote decoder and the bundled codec’s CNN polisher trained on real Nanopore reads |
 | "How much redundancy?" | The codec-engineer and adversary agents measure it per archive |
 
 Full walk-through of the software pipeline: [HOW_IT_WORKS.md](HOW_IT_WORKS.md).

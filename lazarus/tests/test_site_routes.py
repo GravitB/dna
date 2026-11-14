@@ -9,7 +9,7 @@ def test_homepage_is_lazarus_site():
     r = client.get("/")
     assert r.status_code == 200
     assert "Lazarus" in r.text
-    assert "erbgut" not in r.text.lower()
+    assert "bundled codec" not in r.text.lower()
     assert client.get("/scrolly.js").status_code == 200
 
 

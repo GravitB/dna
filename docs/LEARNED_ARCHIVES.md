@@ -3,7 +3,7 @@
 The business interface supports three explicit choices:
 
 - **Evaluated model** reuses a server-generated model only when the complete sequencing profile, strand length, frozen decoder checkpoint and codec source hashes match.
-- **Fresh learning** trains Erbgut's risk CNN in an isolated worker: 512 controlled synthetic training sequences, eight labeling repetitions, up to 12 epochs, and a separate 128-sequence ranking evaluation. This is exploratory model evaluation, not evidence of improved archival recovery. The existing CNN decoder is never retrained.
+- **Fresh learning** trains the bundled codec’s risk CNN in an isolated worker: 512 controlled synthetic training sequences, eight labeling repetitions, up to 12 epochs, and a separate 128-sequence ranking evaluation. This is exploratory model evaluation, not evidence of improved archival recovery. The existing CNN decoder is never retrained.
 - **Standard rules** does not train or load a risk model. The original broader analysis remains available to API clients that omit `encoding_mode`; saved legacy archives retain their recovery path.
 
 No model-upload endpoint exists. Registry entries refer to server-generated, SHA-256-addressed checkpoints. Loading uses `torch.load(weights_only=True)`, never the upstream unrestricted pickle fallback. Models, metadata, evidence and frozen candidate files follow the configured artifact backend. Missing or incompatible models require an explicit new choice, rather than a silent fallback.
@@ -44,4 +44,4 @@ For a live agent run, upload a bundled image through the app, select the matchin
 
 Automated Supabase tests use the real HTTP adapter against a private-storage protocol double. They validate frozen learned FASTA identity, remote persistence and key handling, then recover on an empty computer after one vault is lost, without loading the risk model. This is not a live hosted Supabase verification. The current machine has no Supabase credentials configured.
 
-All physical synthesis, aging and sequencing remain simulated. Reports are simulation recovery reports, not compliance certification. Codec, simulator, risk learner and frozen CNN decoder are Erbgut research components; their published improvements are not Lazarus results.
+All physical synthesis, aging and sequencing remain simulated. Reports are simulation recovery reports, not compliance certification. Codec, simulator, risk learner and frozen CNN decoder are the bundled codec research components; their published improvements are not Lazarus results.

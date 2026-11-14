@@ -78,7 +78,7 @@ export function DnaStory({job,id}: {job:Archive;id:string}) {
       <p>{s.data_strands.toLocaleString()} data strands + {s.manifest_strands.toLocaleString()} manifest strands. Your file spans many sequences.</p>
       <label>One actual data strand<code className="dna-sequence"><Strand seq={s.example} /></code></label>
       <details><summary>Download DNA sequences</summary><p>FASTA is a text format containing strand names and DNA letters. A single strand cannot restore the whole file. Keep the complete archive and encryption key.</p>
-        {job.order?.order_files.filter(p=>p.endsWith('.fasta')).map(p=><a className="dna-download" key={p} href={`/api/jobs/${id}/files/${p.split('/').map(encodeURIComponent).join('/')}`} download>DNA sequences — FASTA text · {p.split('/')[1]}</a>)}
+        {job.order?.order_files.filter(p=>p.endsWith('.fasta') && !job.vaults?.some(v => v.status === 'destroyed' && p.startsWith(`vaults/vault-${v.vault_id}/`))).map(p=><a className="dna-download" key={p} href={`/api/jobs/${id}/files/${p.split('/').map(encodeURIComponent).join('/')}`} download>DNA sequences — FASTA text · {p.split('/')[1]}</a>)}
       </details></> : <p>{job.order ? "DNA counts not available for this older archive." : "Your DNA sequence and letter counts will appear once the approved archive has been prepared."}</p>}
   </section>;
 }

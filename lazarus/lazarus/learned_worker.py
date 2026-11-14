@@ -7,7 +7,7 @@ from . import dna
 
 
 def train(request, output):
-    from dnacodec.risk import RiskModel, generate_strands, label_failure_rates, spearman
+    from dna_codec.risk import RiskModel, generate_strands, label_failure_rates, spearman
     output.mkdir(parents=True, exist_ok=True)
     def progress(stage, **extra):
         p = output / 'progress.tmp'
@@ -33,7 +33,7 @@ def train(request, output):
               'rank_correlation': float(corr) if np.isfinite(corr) else None,
               'seed_partition': 'train', 'decoder_retrained': False,
               'scope': 'Controlled synthetic sequences; customer archive validation is separate.',
-              'exploratory': True, 'attribution': 'Erbgut RiskModel and frozen CNN decoder'}
+              'exploratory': True, 'attribution': 'the bundled codec RiskModel and frozen CNN decoder'}
     (output / 'report.json').write_text(json.dumps(report))
     progress('Training and model evaluation completed')
 

@@ -6,7 +6,7 @@ Official framework reference: https://www.langchain.com/deep-agents
 
 ## Implemented research integration
 
-The supervisor delegates to `codec-researcher`, whose `run_learning_experiment` tool starts the real Erbgut `run_loop` in an isolated Python process. It uses the archive's channel, retention model, coverage and target with Erbgut's fixed research test file. The loop audits rules, trains a risk scorer on simulated decoder failures, searches settings and evaluates with held-out seeds. The existing CNN polisher remains fixed: upstream only implements decoder adaptation for its transformer.
+The supervisor delegates to `codec-researcher`, whose `run_learning_experiment` tool starts the real the bundled codec `run_loop` in an isolated Python process. It uses the archive's channel, retention model, coverage and target with the bundled codec’s fixed research test file. The loop audits rules, trains a risk scorer on simulated decoder failures, searches settings and evaluates with held-out seeds. The existing CNN polisher remains fixed: upstream only implements decoder adaptation for its transformer.
 
 Quick mode uses upstream reduced budgets and a ten-minute process limit. Full mode uses upstream default budgets and a two-hour limit. Neither promises improvement. Reports, logs, risk model checkpoints and codec manifests are published through the existing artifact store; a completed report is also recorded on the job. The agent receives tool events through the existing activity stream. Autopilot remains a separate scripted recipe and does not demonstrate deepagent behavior.
 

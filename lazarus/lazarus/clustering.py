@@ -1,8 +1,8 @@
 """Reference-free clustering of sequencing reads.
 
-Erbgut's simulator returns reads already grouped by the strand they came from ("clusters"). Real
+the bundled codec’s simulator returns reads already grouped by the strand they came from ("clusters"). Real
 sequencing output, and Lazarus' post-simulation FASTA, is a flat, shuffled list of reads with no
-strand identity. Before consensus decoding, reads have to be grouped by similarity alone. Erbgut has
+strand identity. Before consensus decoding, reads have to be grouped by similarity alone. the bundled codec has
 no such stage, so Lazarus implements one here. It never sees reference strands or simulator labels.
 
 Why this works for Fountain-coded strands: every strand is whitened with a seed-derived mask, so two
@@ -13,7 +13,7 @@ Algorithm (per sample/pool):
 1. Greedy pass: each read looks up its k-mers in an index of cluster centroids, checks the few
    centroids it shares the most k-mers with by banded edit distance, and joins the first one within
    READ_THRESHOLD x length. Otherwise it starts a new cluster.
-2. Consensus of every cluster (Erbgut's majority-vote reconstruct), then clusters whose consensus
+2. Consensus of every cluster (the bundled codec’s majority-vote reconstruct), then clusters whose consensus
    sequences are within MERGE_THRESHOLD x length are merged (heals clusters that were split because
    their first read happened to be unusually noisy).
 
@@ -28,7 +28,7 @@ from statistics import median
 
 from rapidfuzz.distance import Levenshtein
 
-from dnacodec.baseline import reconstruct
+from dna_codec.baseline import reconstruct
 
 K = 8
 MIN_SHARED_KMERS = 3

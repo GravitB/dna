@@ -9,7 +9,7 @@ go to `exports/export_metadata.json`; everything is also bundled in `exports/cle
 DNA and the keys.
 
 Step 2 (simulation): a run copies the clean export byte-for-byte into its own folder, then sends
-every (vault, pool) tube through Erbgut's channel simulator with a seed derived from the run seed.
+every (vault, pool) tube through the bundled codec’s channel simulator with a seed derived from the run seed.
 The resulting reads are shuffled and written to `post_simulation_reads.fasta` as
 `>read_000001 sample={pool}`. Strand identities and per-read error alignments go to a separate
 `ground_truth.tsv`, which the decoder never reads. Runs are immutable: a new run never overwrites
@@ -37,7 +37,7 @@ import numpy as np
 from rapidfuzz.distance import Levenshtein
 
 from . import artifacts, crypto, dna, fasta, manifest, store, vaults
-from dnacodec.seeds import is_heldout
+from dna_codec.seeds import is_heldout
 
 EXPORT = "exports"
 PRE_FASTA = f"{EXPORT}/pre_simulation.fasta"
@@ -47,7 +47,7 @@ CLEAN_ZIP = f"{EXPORT}/clean_dna.zip"
 SIM_FILES = ("input_snapshot.fasta", "post_simulation_reads.fasta", "simulation_metadata.json", "ground_truth.tsv")
 DIGITAL_NOTICE = ("Digital DNA sequences designed by the encoder. They have not been physically "
                   "synthesized, stored or sequenced.")
-SIM_NOTICE = ("Reads produced by Erbgut's sequencing/storage channel simulator, not by a laboratory. "
+SIM_NOTICE = ("Reads produced by the bundled codec’s sequencing/storage channel simulator, not by a laboratory. "
               "A single simulated trial is not proof of long-term physical recoverability.")
 FAR_READ = 0.35  # normalized edit distance above which a read is counted as malformed/chimeric
 MAX_SIM_READS = 600_000
@@ -128,7 +128,7 @@ def build_clean_export(job_id: str, man: dict | None = None) -> dict:
             "approved_settings": settings,
             "pools": {pid: {k: m[k] for k in ("settings", "n_bytes", "n_chunks")} for pid, m in man["pools"].items()},
             "bootstrap_manifest": bundle["bootstrap"],
-            "codec": "Erbgut DNA Fountain encoder (dnacodec.encoder)",
+            "codec": "the bundled codec DNA Fountain encoder (dna_codec.encoder)",
         },
         "counts": {
             "sequences": len(records),
@@ -257,7 +257,7 @@ def profile_for(p: dict):
 
 
 def subseed(seed: int, k: int) -> int:
-    """Deterministic per-tube seed. Skips Erbgut's held-out evaluation range."""
+    """Deterministic per-tube seed. Skips the bundled codec’s held-out evaluation range."""
     s = int(np.random.SeedSequence([seed, k]).generate_state(1)[0]) & 0x7FFFFFFF
     return s + 1000 if is_heldout(s) else s
 
@@ -359,7 +359,7 @@ def start_simulation(job_id: str, params: dict, *, background: bool = True) -> d
     if not job.get("order"):
         raise FileNotFoundError("Approve an archive order before running a DNA simulation")
     p = normalize_params(job, params)
-    profile_for(p)  # validate overrides early (Erbgut checks rate ranges)
+    profile_for(p)  # validate overrides early (the bundled codec checks rate ranges)
     build_clean_export(job_id)
     sim_id = time.strftime("sim-%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     rec = {"id": sim_id, "created": store.now(), "status": "running", "settings": p,
@@ -393,7 +393,7 @@ def _run_simulation(job_id: str, sim_id: str, p: dict) -> None:
                 "notice": SIM_NOTICE,
                 "settings": p,
                 "profile": dna.profile_to_dict(prof),
-                "simulator": "Erbgut simulator A (calibrated)" if p["channel"] == "a" else "Erbgut simulator B (red team)",
+                "simulator": "the bundled codec simulator A (calibrated)" if p["channel"] == "a" else "the bundled codec simulator B (red team)",
                 "seed_scheme": "tube k uses numpy SeedSequence([seed, k]); tubes = (vault, pool) in clean FASTA order; "
                                "reads shuffled with default_rng([seed, 0x5EED])",
                 "encoder_configuration": job["order"]["export"]["encoder_configuration"],

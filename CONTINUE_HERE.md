@@ -6,7 +6,7 @@ Updated November 14, 2026 on `dsun-1/friendly-business-ux`, after merging the or
 
 - Business file → DNA → restored-file interface, quick picture demo and actual FASTA viewer remain intact.
 - Explicit evaluated-model, fresh-learning and standard-rule choices. Legacy API clients may omit `encoding_mode` for the original broader standard search; saved legacy archives still recover.
-- Real Erbgut risk-CNN training in a cancelable worker, with controlled synthetic sequences, independent ranking evaluation, progress, timeout and server-restart interruption reporting. The CNN decoder remains frozen.
+- Real the bundled codec risk-CNN training in a cancelable worker, with controlled synthetic sequences, independent ranking evaluation, progress, timeout and server-restart interruption reporting. The CNN decoder remains frozen.
 - Server-generated model registry with profile, codec-source and decoder-checkpoint compatibility checks; SHA-256 identity and safe `weights_only=True` loading. No user-supplied pickle models.
 - Frozen candidates encode actual encrypted uploaded files with the learned scorer. Matched standard/learned selection uses training seeds; only the selected candidate receives final held-out validation. Failed final evidence cannot be re-rolled.
 - Exact candidate ID, file/placement metadata, sequence checksums, immutable evidence artifact and modeled budget gate approval. Orders use frozen strands verbatim and retain all codec settings in the self-describing DNA manifest.
@@ -31,6 +31,6 @@ Read [docs/LEARNED_ARCHIVES.md](docs/LEARNED_ARCHIVES.md) for architecture, limi
 
 Live hosted Supabase credentials are not configured on this machine; current live runs use local storage. Do not claim a hosted Supabase end-to-end run. Configure the private project using README/Supabase setup, then verify a fresh learned archive on a second empty working directory. Do not destroy existing user archives.
 
-Models, keys, uploads, jobs and `.env` remain ignored local/private runtime data and are not pushed to Git. A teammate without the registry must choose fresh learning or standard encoding. Erbgut remains an ignored dependency under `vendor/hackmit2026-main`; follow README setup instead of relying on another developer's absolute checkout path.
+Models, keys, uploads, jobs and `.env` remain ignored local/private runtime data and are not pushed to Git. A teammate without the registry must choose fresh learning or standard encoding. the bundled codec remains an ignored dependency under `vendor/legacy-codec`; follow README setup instead of relying on another developer's absolute checkout path.
 
-All synthesis, aging and sequencing are simulated. Costs are modeled placeholders. No physical synthesis, accounts/subscriptions or regulatory certification is implemented. Attribute the codec, simulators, risk learner and frozen decoder to Erbgut; its published improvements are not Lazarus measurements.
+All synthesis, aging and sequencing are simulated. Costs are modeled placeholders. No physical synthesis, accounts/subscriptions or regulatory certification is implemented. Attribute the codec, simulators, risk learner and frozen decoder to the bundled codec; its published improvements are not Lazarus measurements.

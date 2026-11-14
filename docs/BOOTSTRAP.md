@@ -8,7 +8,7 @@ Every vault holds a full copy of the manifest. In `order.fasta` its strands are 
 in a wet lab they would be a separate tube or primer pair. Sequence them.
 
 ## 2. Decode them with this fixed setting
-- DNA Fountain (LT) code as in Erlich & Zielinski 2017; reference implementation `dnacodec.encoder` (Erbgut)
+- DNA Fountain (LT) code as in Erlich & Zielinski 2017; reference implementation `dna_codec.encoder` (bundled codec)
 - 2 bits per base: A=0, C=1, G=2, T=3
 - strand length 110 bases, of which the first 16 are the seed
 - each strand payload = chunk + CRC-16, whitened with a mask derived from the seed

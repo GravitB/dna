@@ -69,7 +69,7 @@ def train(job_id):
             update(job_id, status='failed', message='Training failed or exceeded ten minutes. Inspect the worker log, retry, or use standard encoding.')
             return None
         import torch
-        from dnacodec.risk import RiskModel
+        from dna_codec.risk import RiskModel
         payload = torch.load(root / 'risk.pt', map_location='cpu', weights_only=True)
         model = RiskModel._from_payload(payload, device='cpu')
         row = model_registry.register(job_id, model, json.loads((root / 'report.json').read_text()))

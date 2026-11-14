@@ -2,7 +2,7 @@
 
 Plain Python functions with type hints and docstrings; agent.py turns them into LangChain tools.
 Every call is logged to the job's event stream (tool_call / tool_result) and to its custody log.
-Nothing here asks an LLM anything: all numbers come from real Erbgut encode/simulate/decode runs.
+Nothing here asks an LLM anything: all numbers come from real the bundled codec encode/simulate/decode runs.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Literal
 
-Decoder = Literal["baseline", "polish"]  # 'polish' = Erbgut's CNN PolishDecoder
+Decoder = Literal["baseline", "polish"]  # 'polish' = the bundled codec’s CNN PolishDecoder
 
 from . import crypto, dna, manifest, store, vaults, presentation, artifacts, experiment
 from .persistence import get_cloud
@@ -241,7 +241,7 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
 
 @logged
 def build_profile(job_id: str, coverage: float | None = None) -> dict:
-    """Build the Erbgut channel profile for this customer: the vendor's read technology (calibrated on
+    """Build the the bundled codec channel profile for this customer: the vendor's read technology (calibrated on
     real reads) stretched to the retention horizon. coverage = planned reads per strand at read-back."""
     p = _profile(job_id, coverage)
     return {
@@ -320,7 +320,7 @@ def run_codec_experiment(
     homopolymer_rule: bool = True,
     gc_rule: bool = True,
 ) -> dict:
-    """pool_id: one pool, or 'all' for the whole archive. Encode with Erbgut's Fountain encoder, then run `trials` simulated sequencing passes and
+    """pool_id: one pool, or 'all' for the whole archive. Encode with the bundled codec’s Fountain encoder, then run `trials` simulated sequencing passes and
     decode each one. Returns recovery_rate (fraction of exact file recoveries), strand accuracy,
     bits per base and modeled costs. decoder: 'baseline' (majority vote, fast) or 'polish' (CNN)."""
     r = _experiment(
@@ -410,7 +410,7 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
 def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length: int = 110, n_vaults: int = 3,
                   homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """Modeled total cost to write every pool at this setting and read it back once, against the budget.
-    Prices are Erbgut placeholder prices, not vendor quotes."""
+    Prices are the bundled codec placeholder prices, not vendor quotes."""
     job = store.load(job_id)
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     prof = _profile(job_id, coverage)
@@ -591,7 +591,7 @@ def recover_archive(
 ) -> dict:
     """Year-2076 recovery using ONLY the surviving vaults, the bootstrap spec and the KMS keys:
     sequence (simulated), decode the manifest with the fixed bootstrap setting, then decode every pool
-    with BOTH the majority-vote baseline and Erbgut's CNN polisher on the same reads, Fountain-recover,
+    with BOTH the majority-vote baseline and the bundled codec’s CNN polisher on the same reads, Fountain-recover,
     decrypt, decompress and check SHA-256. attempt = re-sequencing attempt number (new reads).
     coverage overrides the planned reads per strand (e.g. sequence deeper on a retry)."""
     d = store.job_dir(job_id)
@@ -879,8 +879,8 @@ decoder {e(str(st.get("decoder")))} · {o.get("data_strands")} data strands + {o
 <table><tr><th>File</th><th>SHA-256 match</th><th>Baseline decoder alone</th><th>CNN decoder alone</th><th>SHA-256</th></tr>{rows_files}</table>
 <h3>Chain of custody</h3><table><tr><th>Time (UTC)</th><th>Agent</th><th>Action</th><th>Status</th></tr>{rows_custody}</table>
 <p><small>Demo report, not a regulatory certification or guarantee of future recovery. DNA synthesis and sequencing are simulated
-with the Erbgut channel model (calibrated on real Nanopore reads; storage decay extrapolated). Costs are modeled placeholders.
-Keys are stored separately from DNA: locally in demo mode, or as encrypted key records in Supabase. Codec, simulators and CNN decoder: Erbgut (HackMIT 2026).</small></p>
+with the the bundled codec channel model (calibrated on real Nanopore reads; storage decay extrapolated). Costs are modeled placeholders.
+Keys are stored separately from DNA: locally in demo mode, or as encrypted key records in Supabase. Codec, simulators and CNN decoder: the bundled codec (HackMIT 2026).</small></p>
 </body></html>"""
 
 
@@ -919,10 +919,10 @@ def run_quick_design(job_id: str) -> dict:
 
 @logged
 def run_learning_experiment(job_id: str, quick: bool = True) -> dict:
-    """Run Erbgut's real risk-learning loop with the fixed CNN decoder in an isolated process.
+    """Run the bundled codec’s real risk-learning loop with the fixed CNN decoder in an isolated process.
 
     Quick mode is exploratory, not benchmark evidence. Full mode uses upstream trial budgets.
-    This tests Erbgut's fixed research file, not the customer's archive; no codec is deployed.
+    This tests the bundled codec’s fixed research file, not the customer's archive; no codec is deployed.
     Reports and model checkpoints stay associated with this job. May take several minutes.
     """
     import json
@@ -947,7 +947,7 @@ def run_learning_experiment(job_id: str, quick: bool = True) -> dict:
                       "message": "Learning exceeded its time budget; no success or improvement established."}
         except subprocess.CalledProcessError:
             report = {"status": "failed", "quick": quick,
-                      "message": "Erbgut learning failed. Inspect worker.log; no improvement established."}
+                      "message": "the bundled codec learning failed. Inspect worker.log; no improvement established."}
     if report is None:
         report = json.loads((root / "report.json").read_text())
     else:

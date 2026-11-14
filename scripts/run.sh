@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# One command: fetch Erbgut if needed, install, build the UI, start the server on :8000.
+# One command: check bundled codec, install, build the UI, start the server on :8000.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-scripts/get_erbgut.sh
+scripts/check_codec.sh
 if command -v uv >/dev/null 2>&1; then
   (cd lazarus && uv sync --quiet)
 elif [ ! -x lazarus/.venv/bin/python ]; then

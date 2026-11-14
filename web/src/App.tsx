@@ -1,7 +1,7 @@
 import StorageScale from "./StorageScale";
 import { LearnedArchive } from "./LearnedArchive";
 import DnaExplorer from "./DnaExplorer";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -74,6 +74,11 @@ const defaults: Policy = {
   target: 1,
   notes: "",
 };
+const fileSize = (bytes: number) => bytes < 1000 ? `${bytes} ${bytes === 1 ? "byte" : "bytes"}` : `${(bytes / 1000).toFixed(1)} KB`;
+const testLabel = (key: string, fallback: string) => ({normal: "Normal reading", simulator_b: "Different DNA reader", low_coverage: "Fewer reads", decay_x2: "Twice the storage period", vault_loss: "Loss of one location"}[key] || fallback);
+function OptionalDetails({ title, explanation, children }: { title: string; explanation: string; children: ReactNode }) {
+  return <details className="optional-details"><summary>{title}<span>Optional · expand to explore</span></summary><div className="optional-details-body"><p className="optional-explanation">{explanation}</p>{children}</div></details>;
+}
 function ErrorBox({ error, retry }: { error: string; retry?: () => void }) {
   return error ? (
     <div className="error" role="alert">
@@ -182,6 +187,28 @@ function Archives() {
   const [jobs, setJobs] = useState<ArchiveSummary[] | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleted, setDeleted] = useState<ArchiveSummary | null>(null);
+  const removeArchive = async (job: ArchiveSummary) => {
+    if (!window.confirm(`Delete “${job.name}” from your archives? Its files will be retained for recovery. You can undo this action.`)) return;
+    setDeleting(job.id);
+    try {
+      await api(`/jobs/${encodeURIComponent(job.id)}`, { method: "DELETE" });
+      setJobs(current => current?.filter(j => j.id !== job.id) ?? null);
+      setDeleted(job);
+      setError("");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not delete archive. Try again."); }
+    finally { setDeleting(null); }
+  };
+  const undoDelete = async () => {
+    if (!deleted) return;
+    try {
+      await post(`/jobs/${encodeURIComponent(deleted.id)}/restore`);
+      setDeleted(null);
+      load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not restore archive. Try again."); }
+  };
+
   const hero = useParallax<HTMLDivElement>();
   const load = () =>
     api("/jobs")
@@ -288,9 +315,11 @@ function Archives() {
             </div>
           </div>
           {!shown.length && <p className="muted empty-filter">No archives in this view.</p>}
+          {deleted && <div className="info" role="status">“{deleted.name}” deleted from the list. Files retained. <button onClick={undoDelete}>Undo delete</button></div>}
           <div className="archive-cards">
             {shown.map((j) => (
-              <a className={`archive-card tone-${toneOf(j.presentation)}`} key={j.id} href={`#/job/${j.id}`}>
+              <div className="archive-card-wrap" key={j.id}>
+              <a className={`archive-card tone-${toneOf(j.presentation)}`} href={`#/job/${j.id}`}>
                 <div className="card-top">
                   <StatusPill p={j.presentation} />
                   <time dateTime={j.created}>{shortDate(j.created)}</time>
@@ -321,6 +350,8 @@ function Archives() {
                   <IconArrow />
                 </span>
               </a>
+              <button className="archive-delete" aria-label={`Delete archive ${j.name}`} disabled={deleting === j.id} onClick={() => removeArchive(j)}>{deleting === j.id ? "Deleting…" : "Delete archive"}</button>
+              </div>
             ))}
             <a className="archive-card new-card" href="#/new">
               <span className="new-plus" aria-hidden="true">+</span>
@@ -330,7 +361,7 @@ function Archives() {
           </div>
         </section>
       )}
-      <StorageScale />
+      <OptionalDetails title="Compare storage sizes" explanation="An illustration of how much physical space the same data could occupy as paper, drive capacity, or DNA material. These are estimates, not measured savings."><StorageScale /></OptionalDetails>
       <section className="explanation">
         <div>
           <p className="idx">03 · How it works</p>
@@ -618,7 +649,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                       <span>
                         {f.name}
                         <small>
-                          {(f.bytes / 1000).toFixed(1)} KB
+                          {fileSize(f.bytes)}
                           {f.name.endsWith(".txt")
                             ? " · Check that this is a final record, not a working draft."
                             : ""}
@@ -635,12 +666,12 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
               </p>
             </>
           )}
-          {step === 0 && selected.length > 0 && <StorageScale files={selected} />}
+          {step === 0 && selected.length > 0 && <OptionalDetails title="How small could these files be?" explanation="Explore estimated storage volumes for your selected files. This comparison does not change your archive settings."><StorageScale files={selected} /></OptionalDetails>}
           {step === 1 && (
             <>
               <h2>What must this archive support?</h2>
-              {!sample && <fieldset><legend>How should we design the archive?</legend>
-                <label>Encoding approach<select value={encodingMode} onChange={e => setEncodingMode(e.target.value)}>
+              {!sample && <fieldset><legend>How should we design the archive?</legend><p>Encoding means turning your file into DNA letters. Standard rules use fixed checks; learned models try to predict which sequences will be easier to recover.</p>
+                <label>Design method<select value={encodingMode} onChange={e => setEncodingMode(e.target.value)}>
                   <option value="evaluated">Use an evaluated learned model</option>
                   <option value="fresh">Train a fresh learned model</option>
                   <option value="standard">Use standard DNA rules</option>
@@ -661,7 +692,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                   </small>
                 </label>
                 <label>
-                  Modeled DNA writing budget (USD)
+                  Simulated writing budget (USD)
                   <input
                     type="number"
                     min="0.01"
@@ -685,7 +716,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
               </label>
               {sample && <p className="info">Picture demo: 50 simulated years, three locations, 16 reads per piece, three trials per point. Use “Archive my files” for custom settings.</p>}
               <details>
-                <summary>Advanced settings</summary>
+                <summary>Advanced settings · reader and recovery controls</summary><p>These settings control how we simulate reading DNA and how much extra recovery data we add. You can keep the defaults.</p>
                 <fieldset disabled={sample}>
                 <p>The app tests technical designs against these settings.</p>
                 <div className="two">
@@ -1056,7 +1087,7 @@ function ArchiveView({ id }: { id: string }) {
                   {files.map((f) => (
                     <tr key={f.name}>
                       <td><div className="file-cell">{f.included && job.originals_available && <FilePreview name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}`} />}<span>{f.name}</span></div></td>
-                      <td>{(f.bytes / 1000).toFixed(1)} KB</td>
+                      <td>{fileSize(f.bytes)}</td>
                       <td>{f.included ? "Yes" : "Excluded by user"}</td>
                     </tr>
                   ))}
@@ -1064,8 +1095,8 @@ function ArchiveView({ id }: { id: string }) {
               </table>
             </div>
           </section>
-          <StorageScale job={job} />
-          <DnaExplorer job={job} />
+          <OptionalDetails title="Compare this archive’s storage size" explanation="Compare estimated physical volumes for the same file data. Packaging and laboratory overhead are excluded."><StorageScale job={job} /></OptionalDetails>
+          <OptionalDetails title="Explore the DNA letters" explanation="Your file is encoded as sequences of A, C, G and T. This viewer shows those sequences as an illustrative 3D strand; no physical DNA is produced."><DnaExplorer job={job} /></OptionalDetails>
           {p.needs_retest && (
             <div className="info">
               Available locations have changed since the latest recovery test.
@@ -1184,10 +1215,11 @@ function ArchiveView({ id }: { id: string }) {
                   </tbody>
                 </table>
               </div>
+              {!latest.all_verified && <p className="info">The available locations did not restore every file. Try another recovery test below, or create a revised archive from your original files with more recovery data. Previously removed locations cannot be restored here.</p>}
               <div className="restored-gallery">{latest.files.filter(f => f.sha256_match).map(f => <article key={f.name}>
                 <FilePreview large name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}?stage=restored&attempt=${job.drills.length}`} />
                 <h3>{f.name}</h3><span className="badge success">Restored unchanged · SHA-256 match</span>
-                <p>{((files.find(x => x.name === f.name)?.bytes || 0)/1000).toFixed(1)} KB · Exact file integrity verified</p>
+                <p>{fileSize(files.find(x => x.name === f.name)?.bytes || 0)} · Exact file integrity verified</p>
                 <a className="button primary" download={f.name} href={`/api/jobs/${id}/files/restored/${encodeURIComponent(f.name)}`}>Download restored file</a>
               </article>)}</div>
               <p className="muted">
@@ -1197,7 +1229,7 @@ function ArchiveView({ id }: { id: string }) {
               </p>
             </section>
           )}
-          {job.order && <DnaExperiment id={id} job={job} />}
+          {job.order && <OptionalDetails title="Try extra damage tests" explanation="An optional experiment: damage copies of the encoded sequences and see whether the file can still be recovered."><DnaExperiment id={id} job={job} /></OptionalDetails>}
           {job.order && !job.pending && (
             <section>
               <h2>Recovery scenarios</h2>
@@ -1276,7 +1308,7 @@ function ArchiveView({ id }: { id: string }) {
             </section>
           )}
           <details className="technical">
-            <summary>Technical details</summary>
+            <summary>Technical details · tests and AI activity</summary><p>Detailed measurements and the AI agent’s tool activity. You do not need these logs to approve or restore your archive.</p>
             <h3>Analysis method</h3>
             <p>
               {job.mode === "agent"
@@ -1302,7 +1334,7 @@ function ArchiveView({ id }: { id: string }) {
             {job.order && (
               <>
                 <h3>Synthesis files</h3>
-                {job.order.order_files.map((f) => (
+                {job.order.order_files.filter(f => !job.vaults?.some(v => v.status === "destroyed" && f.startsWith(`vaults/vault-${v.vault_id}/`))).map((f) => (
                   <p key={f}>
                     <a
                       target="_blank"
@@ -1436,7 +1468,7 @@ function Approval({
             <tbody>
               {shown.evidence?.map((e) => (
                 <tr key={e.scenario}>
-                  <td>{e.label}</td>
+                  <td>{testLabel(e.scenario, e.label)}</td>
                   <td>
                     {e.trials == null
                       ? "Not tested"
