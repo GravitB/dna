@@ -13,8 +13,11 @@ import mimetypes
 import shutil
 import time
 from pathlib import Path
+from typing import Literal
 
-from . import crypto, dna, manifest, store, vaults, presentation, artifacts
+Decoder = Literal["baseline", "polish"]  # 'polish' = Erbgut's CNN PolishDecoder
+
+from . import crypto, dna, manifest, store, vaults, presentation, artifacts, experiment
 from .persistence import get_cloud
 
 TOOL_AGENT = {
@@ -312,7 +315,7 @@ def run_codec_experiment(
     redundancy: float,
     coverage: float,
     strand_length: int = 110,
-    decoder: str = "baseline",
+    decoder: Decoder = "baseline",
     trials: int = 8,
     homopolymer_rule: bool = True,
     gc_rule: bool = True,
@@ -338,7 +341,7 @@ def run_codec_experiment(
 
 @logged
 def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], coverages: list[float],
-                    decoder: str = "baseline", trials: int = 6, strand_length: int = 110,
+                    decoder: Decoder = "baseline", trials: int = 6, strand_length: int = 110,
                     compare_rules: bool = True) -> dict:
     """Grid search: run an experiment for every (redundancy, coverage) pair and rule combination. Use it to map the
     recovery / cost frontier quickly before confirming the best point with more trials."""
@@ -370,7 +373,7 @@ def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], covera
 
 @logged
 def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, scenario: str,
-                n_vaults: int = 3, strand_length: int = 110, decoder: str = "polish", trials: int = 6,
+                n_vaults: int = 3, strand_length: int = 110, decoder: Decoder = "polish", trials: int = 6,
                 target: float = 1.0, homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """Red-team a design under a condition it was NOT tuned on. pool_id='all' (recommended) attacks the
     whole archive: a trial only passes if every pool is recovered. scenario:
@@ -442,7 +445,7 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
 
 @logged
 def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vaults: int = 3,
-                          strand_length: int = 110, decoder: str = "polish", design_notes: str = "",
+                          strand_length: int = 110, decoder: Decoder = "polish", design_notes: str = "",
                           homopolymer_rule: bool = True, gc_rule: bool = True, candidate_id: str | None = None) -> dict:
     """REQUIRES HUMAN APPROVAL. Encode every pool with the approved setting, spread strands across
     n_vaults sites (strand i -> vault i mod n), write vendor-ready order.fasta/order.csv per vault, and
@@ -481,7 +484,7 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
             man_pools[pid] = {**dna.meta_to_dict(enc.meta), "offset": job["pools"][pid]["offset"]}
         files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools", "offset", "cipher_bytes")}
                  for name, v in job["sealed"].items()}
-        man = {"format": "lazarus-manifest-v1", "company": job["company"], "created": store.now(),
+        man = {"format": "lazarus-manifest-v1", "archive_id": job_id, "company": job["company"], "created": store.now(),
                "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
                            "planned_coverage": coverage, "recommended_decoder": decoder},
                "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
@@ -541,6 +544,8 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
         store.emit(
             job_id, "vault_event", "supervisor", {"vault_id": v, "status": "healthy"}
         )
+    # Step 1 of the before/after experiment: immutable clean (pre-simulation) export of this order.
+    order["export"] = experiment.build_clean_export(job_id, man)
     return order
 
 

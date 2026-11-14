@@ -51,8 +51,12 @@ Workflow (write it as todos first with write_todos, keep them updated):
 4. Delegate red-teaming to the `adversary` subagent with the proposed design. If any scenario fails,
    REVISE the design (raise redundancy by at least 0.3 or increase coverage) and send it back to the adversary. Repeat until all
    scenarios pass or you hit budget; then explain the trade-off honestly.
+   Every revised design is a new design: ask the adversary to rerun ALL FOUR scenarios on it, not only the ones that
+   failed. Results measured on an earlier design never count for a new one, and approval is blocked unless the exact
+   proposed design passed all four.
 5. Record the decision and the evidence in /design_notes.md (virtual filesystem).
-6. Call place_synthesis_order with the final design, including both tested rule settings. A human must approve it; if they reject or edit,
+6. Call place_synthesis_order only with a design that passed all four scenarios itself, using exactly the values the adversary
+   tested: redundancy, coverage, both rule settings and decoder='polish' (the CNN; there is no decoder named 'cnn'). A human must approve it; if they reject or edit,
    follow their decision.
 7. Call destroy_primary to start the disaster drill (a human approves this too).
 8. Delegate the drill to the `recovery-engineer` subagent. If any file fails verification, have it retry
@@ -80,8 +84,11 @@ reality does. Run stress_test with pool_id='all' (the whole archive) for each sc
 decay_x2, low_coverage (trials 4-6, decoder 'polish', target as given). Report each result with recovery rate and trial count,
 and say plainly which scenarios fail. Do not soften failures. Suggest the smallest change you would test
 next, but do not claim it works unless you tested it. Pass the proposed homopolymer_rule and gc_rule to every test.
-For low_coverage pass the original planned coverage, since stress_test itself applies the reduction. Always use the policy's vault count.
-Test each scenario once per design and report the observed result; do not retry the same test looking for a better outcome."""
+For every scenario, including low_coverage, pass the proposed design's coverage (not the policy's), since stress_test itself applies the reduction. Always use the policy's vault count.
+Test each scenario once per design and report the observed result; do not retry the same test looking for a better outcome.
+Always run all four scenarios for the design you are given, even if the request asks you to re-test only the ones that
+failed before: earlier results belong to a different design and do not count for this one. Only say "all scenarios passed"
+when all four passed in your own tests of this exact design."""
 
 RECOVERY_PROMPT = """You are the Recovery Engineer. It is decades later; all servers are gone. Run
 recover_archive. It uses only the surviving vaults, the one-page bootstrap spec and the customer's KMS
@@ -205,6 +212,48 @@ class Run:
         store.emit(self.job_id, "message", "human", {"text": f"Human decision on {tool}: {d.get('decision')}"})
         return d
 
+    MAX_AUTO_REJECTS = 3
+
+    def _precheck(self, tool: str, args: dict) -> str | None:
+        """Send an order the human could not approve straight back to the agent, naming what is missing.
+
+        Uses the same rule as the approval button (presentation.proposal). After MAX_AUTO_REJECTS the
+        proposal is shown to the human anyway, so a confused model cannot loop forever.
+        """
+        if tool != "place_synthesis_order" or args.get("candidate_id"):
+            return None  # frozen candidates carry their own fixed evidence (candidates.approval); never retune them
+        job = store.load(self.job_id)
+        if job.get("encoding_mode") and job.get("analysis_preset") != "quick_demo":
+            return None  # candidate workflow forbids the legacy stress tests this message would ask for
+        self._auto_rejects = getattr(self, "_auto_rejects", 0)
+        if self._auto_rejects >= self.MAX_AUTO_REJECTS:
+            return None
+        try:
+            cost = tools.estimate_cost.__wrapped__(
+                self.job_id, float(args.get("redundancy", 1.0)), float(args.get("coverage", 10)),
+                int(args.get("strand_length", 110)), int(args.get("n_vaults", 3)),
+                bool(args.get("homopolymer_rule", True)), bool(args.get("gc_rule", True)))
+            prop = presentation.proposal(store.load(self.job_id), args, cost)
+        except Exception:  # noqa: BLE001  let the human see whatever went wrong
+            return None
+        if prop["can_approve"]:
+            return None
+        self._auto_rejects += 1
+        design = {k: v for k, v in presentation.design(store.load(self.job_id), args).items()
+                  if k in ("redundancy", "coverage", "strand_length", "n_vaults", "decoder", "homopolymer_rule", "gc_rule")}
+        gaps = [f"{e['scenario']}: {'no result for this exact design' if e['state'] == 'missing' else 'failed'}"
+                for e in prop["evidence"] if e["state"] != "passed"]
+        if not cost.get("within_budget"):
+            gaps.append(f"modeled write cost ${cost.get('write_usd')} exceeds the budget")
+        msg = (f"AUTOMATIC CHECK (not the human): this order cannot be approved yet. Design {design}. Problems: "
+               f"{'; '.join(gaps)}. Approval needs stress_test(pool_id='all') to pass for all four scenarios with "
+               f"exactly these values (same redundancy, coverage, decoder, rules, n_vaults; for low_coverage pass this "
+               f"same coverage). Run the missing or failed tests through the adversary (revise the design if any fail), "
+               f"then call place_synthesis_order again with the exact tested values.")
+        store.emit(self.job_id, "message", "supervisor",
+                   {"text": f"Automatic check sent the order back to the agent: {'; '.join(gaps)}."})
+        return msg
+
     def _main(self):
         try:
             store.update(self.job_id, lambda j: j.update(status="running", mode=self.mode))
@@ -273,7 +322,12 @@ class Run:
                     reqs = [val]
                 decisions = []
                 for r in reqs:
-                    d = self._ask(r.get("name") or r.get("action", {}).get("name", "?"), r.get("args") or {})
+                    name = r.get("name") or r.get("action", {}).get("name", "?")
+                    problem = self._precheck(name, r.get("args") or {})
+                    if problem:
+                        decisions.append({"type": "reject", "message": problem})
+                        continue
+                    d = self._ask(name, r.get("args") or {})
                     if d.get("decision") == "approve":
                         decisions.append({"type": "approve"})
                     elif d.get("decision") == "edit":

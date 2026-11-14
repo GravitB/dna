@@ -98,3 +98,151 @@ export type Ev = {
   agent: string;
   data: any;
 };
+export type SimSettings = {
+  tech: string;
+  channel: string;
+  coverage: number;
+  storage_years: number;
+  seed: number;
+  lost_vaults: number[];
+  sub_rate: number | null;
+  ins_rate: number | null;
+  del_rate: number | null;
+  dropout_rate: number | null;
+  decay_per_year: number | null;
+};
+export type SimMetrics = {
+  clean_sequences: number;
+  surviving_sequences: number;
+  missing_sequences: number;
+  missing_from_lost_vaults: number;
+  observed_dropout_rate: number;
+  logical_strands: number;
+  logical_strands_missing: number;
+  reads: number;
+  duplicate_reads_kept: number;
+  mean_reads_per_surviving_sequence: number;
+  exact_reads: number;
+  malformed_or_chimeric_reads: number;
+  observed_error_counts: Record<string, number>;
+  observed_error_rates_per_base: {
+    substitution: number;
+    insertion: number;
+    deletion: number;
+    total: number;
+  };
+  per_sample_reads: Record<string, number>;
+};
+export type ArtifactRef = { path: string; sha256: string; bytes: number };
+export type Simulation = {
+  id: string;
+  created: string;
+  status: "running" | "complete" | "failed";
+  settings: SimSettings;
+  files: Record<string, ArtifactRef>;
+  metrics: SimMetrics | null;
+  profile?: Record<string, unknown>;
+  error: string | null;
+  seconds?: number;
+};
+export type DecodeSummary = {
+  id: string;
+  created: string;
+  verdict: Verdict;
+  simulation_id: string | null;
+  files_verified: number;
+  files: number;
+};
+export type Verdict = "PASS" | "PARTIAL" | "FAIL" | "INCOMPLETE";
+export type DnaExport = {
+  archive_id: string;
+  notice: string;
+  export: {
+    created: string;
+    files: Record<string, { sha256: string; bytes: number }>;
+    counts: {
+      sequences: number;
+      per_vault: Record<string, number>;
+      data_strands: number;
+      manifest_strands_per_vault: number;
+      n_vaults: number;
+      strand_lengths: number[];
+      total_nucleotides: number;
+      redundancy: number;
+      gc_mean: number | null;
+    };
+    encoder_configuration: {
+      approved_settings: Record<string, unknown>;
+      pools: Record<string, { settings: Record<string, unknown>; n_bytes: number; n_chunks: number }>;
+    };
+  };
+  order_settings: Record<string, unknown>;
+  vault_files: string[];
+  simulations: Simulation[];
+  decodes: DecodeSummary[];
+};
+export type Segment = { op: string; clean: string; read: string };
+export type CompareStrand = {
+  id: string;
+  clean: string;
+  missing: boolean;
+  reads_total: number;
+  reads: {
+    read_id: string;
+    sequence: string;
+    edit_distance: number;
+    substitutions: number;
+    insertions: number;
+    deletions: number;
+    malformed: boolean;
+    segments: Segment[];
+  }[];
+};
+export type DecodeFile = {
+  name: string;
+  verified: boolean;
+  status: string;
+  reason: string | null;
+  expected_sha256: string;
+  actual_sha256?: string | null;
+  expected_bytes?: number;
+  decoder?: string | null;
+};
+export type DecodeSession = {
+  id: string;
+  created: string;
+  status: "queued" | "running" | "complete" | "failed";
+  mode: string;
+  archive_id: string | null;
+  simulation_id: string | null;
+  fasta_name: string;
+  decoders: string[];
+  steps: { step: string; status: string; detail: string }[];
+  verdict: Verdict | null;
+  error: string | null;
+  storage_error?: string;
+  files: { index: number; name: string; bytes: number; sha256: string }[];
+  summary?: {
+    verdict: Verdict;
+    verdict_text: string;
+    missing: string[];
+    warnings: string[];
+    manifest_source: string | null;
+    seconds: number;
+    files: DecodeFile[];
+    decoders: Record<
+      string,
+      {
+        available?: boolean;
+        reason?: string;
+        verdict?: Verdict;
+        seconds?: number;
+        pools_recovered?: number;
+        pools?: number;
+        manifest_recovered?: boolean;
+      }
+    >;
+    input: { filename: string; format: string; records: number; sha256: string; samples: Record<string, number> };
+    simulation_id: string | null;
+  };
+};

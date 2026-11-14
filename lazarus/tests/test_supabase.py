@@ -370,3 +370,32 @@ def test_cloud_error_is_sanitized_and_protected_downloads_stay_private(
         response = api.get("/api/jobs")
         assert response.status_code == 503
         assert "sb_secret_" not in response.text and "headers" not in response.text
+
+
+def test_dna_experiment_artifacts_live_in_cloud_and_decode_elsewhere(cloud, tmp_path, monkeypatch):
+    import random
+
+    from lazarus import decoder, experiment
+
+    c, p = cloud
+    jid = job()
+    d = store.job_dir(jid)
+    data = random.Random(7).randbytes(4000)
+    (d / "uploads" / "record.bin").write_bytes(data)
+    assert "error" not in tools.prepare_archive(job_id=jid, file_names=["record.bin"])
+    order = tools.place_synthesis_order(job_id=jid, redundancy=1.0, coverage=10)
+    assert "error" not in order and order["export"]["files"]
+    assert any("/exports/pre_simulation.fasta" in k for k in p.objects)
+    # A second computer with an empty working folder simulates and decodes from Supabase only.
+    monkeypatch.setattr(store, "JOBS_DIR", tmp_path / "computer-b")
+    store._versions.clear()
+    store._events.clear()
+    shutil.rmtree(d)
+    sim = experiment.start_simulation(jid, {"seed": 8}, background=False)
+    assert sim["status"] == "complete", sim
+    assert any(f"/simulations/{sim['id']}/post_simulation_reads.fasta" in k for k in p.objects)
+    reads = artifacts.download(jid, sim["files"]["post_simulation_reads.fasta"]["path"])
+    report, recovered = decoder.run(decoder.DecodeRequest(
+        reads, "post.fasta", ["baseline"], lambda kid: artifacts.get_key(jid, kid), "archive key store",
+        "existing_archive", expected_archive_id=jid))
+    assert report["verdict"] == "PASS" and recovered["record.bin"] == data

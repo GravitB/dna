@@ -7,7 +7,7 @@ from pathlib import Path
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
-from lazarus import agent, store
+from lazarus import agent, store, tools
 
 SAMPLES = Path(__file__).resolve().parents[2] / "sample_data" / "northstar_bio"
 
@@ -23,6 +23,9 @@ def call(name, args, i):
 
 def test_agent_hitl_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "JOBS_DIR", tmp_path)
+    # The fixed script orders a design it never fully stress-tested; this test is about the interrupt
+    # plumbing, so the automatic pre-approval check (tested below) is switched off here.
+    monkeypatch.setattr(agent.Run, "_precheck", lambda self, tool, args: None)
     pol = {"retention_years": 50, "tech": "nanopore", "coverage": 10, "budget_usd": 50, "target": 1.0, "n_vaults": 3}
     jid = store.new_job("Northstar Bio", pol)
     for f in SAMPLES.iterdir():
@@ -70,3 +73,28 @@ def test_provider_plan_arguments_never_crash_observer(tmp_path, monkeypatch):
         r._on_update((), {'model':{'messages':[call('write_todos',{'todos':todos},1)]}})
     assert len(store.events_since(jid,0,0))==4
     assert agent._plan_rows('bad')==[]
+
+
+def test_untested_order_goes_back_to_agent_not_to_human(tmp_path, monkeypatch):
+    from lazarus import presentation
+    monkeypatch.setattr(store, "JOBS_DIR", tmp_path)
+    pol = {"retention_years": 50, "tech": "nanopore", "coverage": 10, "budget_usd": 50, "target": 1.0, "n_vaults": 3}
+    jid = store.new_job("Northstar Bio", pol)
+    shutil.copy(SAMPLES / "ledger_FY2026.csv", store.job_dir(jid) / "uploads" / "ledger_FY2026.csv")
+    tools.prepare_archive(job_id=jid, file_names=["ledger_FY2026.csv"])
+    run = agent.Run(jid)
+    args = {"job_id": jid, "redundancy": 1.2, "coverage": 15, "n_vaults": 3, "decoder": "polish"}
+    msg = run._precheck("place_synthesis_order", args)
+    assert msg.startswith("AUTOMATIC CHECK") and all(s in msg for s in ("vault_loss", "simulator_b", "decay_x2", "low_coverage"))
+    design = presentation.design(store.load(jid), args)
+    passed = [{"scenario": s, "design": design, "pool_id": "all", "recovery_rate": 1.0, "n_recovered": 6, "n_trials": 6}
+              for s in ("vault_loss", "simulator_b", "decay_x2")]
+    store.update(jid, lambda j: j["stress"].extend(passed))
+    msg = run._precheck("place_synthesis_order", args)
+    assert "low_coverage" in msg and "vault_loss" not in msg
+    store.update(jid, lambda j: j["stress"].append({**passed[0], "scenario": "low_coverage"}))
+    assert run._precheck("place_synthesis_order", args) is None  # fully tested: shown to the human
+    untested = {**args, "redundancy": 1.5}
+    assert run._precheck("place_synthesis_order", untested).startswith("AUTOMATIC CHECK")  # 3rd auto-reject
+    assert run._precheck("place_synthesis_order", untested) is None  # limit reached: the human decides
+    assert run._precheck("destroy_primary", {}) is None

@@ -136,6 +136,88 @@ cd ../web && npm test && npm run build
 The tests cover encryption and tamper detection, decoding the manifest with only the bootstrap spec,
 corrupted strands never producing wrong bytes, recovery from 2 of 3 vaults, and the full deep agent
 graph with human approval, driven by a scripted fake model so no API key is needed.
+`tests/test_dna_experiment.py` covers the DNA experiment:
+- clean FASTA gives a byte-exact PASS
+- moderate damage gives a PASS with both decoders
+- excessive damage is never reported as PASS
+- missing or wrong keys give INCOMPLETE or FAIL
+- independent recovery works after the archive workspace is deleted, with archive storage access
+  forbidden
+- the same seed gives identical reads
+- PDF, PNG and text files are each verified
+- simulations never modify archive artifacts
+
+## DNA storage experiment: clean FASTA → damage → independent decode → SHA-256
+
+After an archive design is approved, every archive page shows a seven-step experiment:
+
+**Upload → Encode → Pre-Simulation FASTA → Simulate → Post-Simulation FASTA → Decode → Verify**
+
+Everything here is digital. No DNA is synthesized or sequenced, and the UI labels it that way.
+
+1. **Step 1: Original Encoded DNA (Pre-Simulation).** `exports/pre_simulation.fasta` is the approved
+   vault order files (`vaults/vault-N/order.fasta`) concatenated in vault order, with ids
+   `vault-N|{pool}|{index}`. It includes every manifest copy and data strand, and nothing is
+   reordered. `exports/clean_dna.zip` adds every vault FASTA/CSV, `export_metadata.json` (counts, strand
+   length, redundancy, nucleotides, encoder configuration), `recovery_bundle.json` and `SHA256SUMS`.
+   This is the clean synthesis design (a potential manufacturing order), **not** sequencing data.
+2. **Simulate.** Choose the sequencer profile (Nanopore or Illumina), coverage, storage years and seed.
+   Advanced settings cover substitution/insertion/deletion rates, base dropout, simulator A or B, and
+   loss of whole vaults. Each run copies the clean FASTA into its own immutable folder
+   `simulations/<sim-id>/` and sends every (vault, pool) tube through Erbgut's channel simulator.
+3. **Step 2: Damaged DNA (Post-Simulation).** `post_simulation_reads.fasta` contains the simulator's actual
+   reads: shuffled, duplicates kept, lost strands left missing, headers `>read_000001 sample=pool-0000`.
+   `sample` is the tube or primer pair that was sequenced, never the strand id. There are no quality
+   scores, because the simulator does not model them. Strand identities and per-read edit alignments go
+   to a separate `ground_truth.tsv` that the decoder never reads. **Compare Before vs. After**
+   highlights substitutions, insertions and deletions against the source strand.
+4. **DNA Decoder** (main navigation). It takes FASTA or FASTQ (qualities ignored) and has two modes.
+   - **A: Existing archive.** Uses the archive's approved recovery bundle and key store, never its uploads.
+     The input can be an uploaded file, a simulation run, or the clean FASTA as a control.
+   - **B: Independent import.** Needs only the FASTA, an optional `recovery_bundle.json` (non-secret) and
+     a passphrase-protected key file (**Export keys for independent recovery**, scrypt + AES-256-GCM).
+     It works on a machine with no copy of the archive.
+5. **Decode.** The pipeline runs:
+   1. Parse and validate the reads, then group them by sample.
+   2. Decode the bootstrap manifest from the `MANIFEST` reads.
+   3. For each pool, run **reference-free read clustering** (`lazarus/clustering.py`, k-mer index plus
+      edit distance). Erbgut's simulator returns clusters grouped by ground truth, so this stage is
+      needed for honest decoding.
+   4. Build the consensus with the majority-vote baseline **and** Erbgut's CNN PolishDecoder, reported
+      separately.
+   5. Fountain recovery, AES-256-GCM decryption and zstd decompression.
+   6. SHA-256 check against the manifest and the bundle.
+6. **Verify.** The verdict is **PASS** when every hash matches, **PARTIAL** when some match, **FAIL** when
+   none match, and **INCOMPLETE** when metadata or keys are missing (the report names them).
+   Similar-looking DNA never counts as recovery. Only byte-exact files can be downloaded. Each attempt
+   writes `verification_report.json` and `.html`. One trial is reported as one trial, not as a
+   reliability estimate.
+
+New endpoints (all under `/api`):
+
+| Method & path | Purpose |
+|---|---|
+| `GET /jobs/{id}/dna` | Clean export metadata, simulations and decodes |
+| `GET /jobs/{id}/dna/sequences?offset&limit&sample` | Inspect clean sequences |
+| `POST /jobs/{id}/simulations` | Start an immutable damage simulation (JSON settings) |
+| `GET /jobs/{id}/simulations[/{sim}]` | Simulation status, settings and metrics |
+| `GET /jobs/{id}/simulations/{sim}/compare` | Clean vs damaged reads with edit operations |
+| `POST /jobs/{id}/recovery-keys` | Passphrase-protected key file (keys never sent in clear) |
+| `GET /jobs/{id}/files/exports/…`, `…/simulations/{sim}/…` (`?download=1`) | Clean FASTA/ZIP/bundle, damaged FASTA, metadata, ground truth |
+| `GET /decoder/capabilities` | Decoder availability and decodable archives |
+| `POST /decoder/sessions` (multipart) | Import FASTA/FASTQ and run decoding (mode A or B) |
+| `GET /decoder/sessions[/{sid}]` | Progress, verdict and per-file hash results |
+| `GET /decoder/sessions/{sid}/files/{report.json, report.html, recovered/<n>}` | Reports and verified files |
+
+Limitations:
+- Reads must carry their pool label (`sample=` or `vault-N|pool|index`). Lazarus pools share Fountain
+  seed spaces, so in a wet lab they would be separated by primers or barcodes before decoding. Reads are
+  assumed to be forward-strand, because the simulator does not reverse-complement them.
+- Decoder sessions are stored locally (`jobs/_decoder_sessions`). In Supabase mode, mode-A reports are also
+  saved with the archive; independent (mode B) sessions stay local.
+- Real sequencing data can be used once it is basecalled to FASTQ, demultiplexed per pool (sample label in
+  the header) and trimmed of primers or adapters to the 110-nt payload. Reverse-complement
+  normalization and primer trimming would be the next stages to add.
 
 ## Cloud storage
 
@@ -147,6 +229,10 @@ lazarus/lazarus/dna.py        thin wrapper over Erbgut (the only module that imp
 lazarus/lazarus/crypto.py     zstd + AES-256-GCM + SHA-256
 lazarus/lazarus/manifest.py   self-describing bootstrap manifest
 lazarus/lazarus/vaults.py     per-site FASTA/CSV orders, vault destruction
+lazarus/lazarus/fasta.py      strict FASTA/FASTQ parsing and writing
+lazarus/lazarus/experiment.py clean pre-simulation export, reproducible damage simulations
+lazarus/lazarus/clustering.py reference-free read clustering (no simulator labels)
+lazarus/lazarus/decoder.py    standalone decoder, verdicts, verification reports, key files
 lazarus/lazarus/tools.py      agent tools, event stream, custody log, certificate
 lazarus/lazarus/agent.py      deepagents supervisor + 4 subagents + human-in-the-loop runner
 lazarus/lazarus/autopilot.py  scripted no-LLM run of the same tools
