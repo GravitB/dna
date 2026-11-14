@@ -44,7 +44,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "llm": bool(os.environ.get("ANTHROPIC_API_KEY")), "model": agent.MODEL}
+    return {"ok": True, "llm": agent.has_model_key(), "model": agent.MODEL}
 
 
 @app.get("/api/samples")
@@ -82,8 +82,8 @@ async def create_job(
         raise HTTPException(400, str(exc)) from exc
     if pol["tech"] not in ("nanopore", "illumina"):
         raise HTTPException(400, "tech must be nanopore or illumina")
-    if mode == "agent" and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(400, "ANTHROPIC_API_KEY is not set; put it in .env or use mode=autopilot")
+    if mode == "agent" and not agent.has_model_key():
+        raise HTTPException(400, "API key for the selected model is not set; configure .env or use autopilot")
     job_id = store.new_job(company, pol)
     up = store.job_dir(job_id) / "uploads"
     total = 0

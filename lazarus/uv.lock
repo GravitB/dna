@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -850,6 +850,7 @@ dependencies = [
     { name = "dnacodec", extra = ["train"] },
     { name = "fastapi" },
     { name = "langchain-anthropic" },
+    { name = "langchain-google-genai" },
     { name = "langgraph" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
@@ -870,6 +871,7 @@ requires-dist = [
     { name = "dnacodec", extras = ["train"], editable = "../vendor/hackmit2026-main" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "langchain-anthropic", specifier = ">=0.3" },
+    { name = "langchain-google-genai", specifier = ">=4" },
     { name = "langgraph", specifier = ">=0.4" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },

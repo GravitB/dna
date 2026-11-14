@@ -192,15 +192,18 @@ def run_codec_experiment(job_id: str, pool_id: str, redundancy: float, coverage:
 
 @logged
 def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], coverages: list[float],
-                    decoder: str = "baseline", trials: int = 6, strand_length: int = 110) -> dict:
-    """Grid search: run an experiment for every (redundancy, coverage) pair. Use it to map the
+                    decoder: str = "baseline", trials: int = 6, strand_length: int = 110,
+                    compare_rules: bool = True) -> dict:
+    """Grid search: run an experiment for every (redundancy, coverage) pair and rule combination. Use it to map the
     recovery / cost frontier quickly before confirming the best point with more trials."""
     rows = []
     for c in coverages[:5]:
         for red in redundancies[:6]:
-            r = _experiment(job_id, pool_id, red, strand_length, c, decoder, trials, True, True)
-            store.emit(job_id, "experiment_result", "codec-engineer", r)
-            rows.append(r)
+            rules = [(True, True), (True, False), (False, True), (False, False)] if compare_rules else [(True, True)]
+            for homopolymer_rule, gc_rule in rules:
+                r = _experiment(job_id, pool_id, red, strand_length, c, decoder, trials, homopolymer_rule, gc_rule)
+                store.emit(job_id, "experiment_result", "codec-engineer", r)
+                rows.append(r)
     store.update(job_id, lambda j: j["experiments"].extend(rows))
     return {"points": [{**r["settings"], "recovery_rate": r["recovery_rate"], "strand_accuracy": r["strand_accuracy"],
                         "write_usd": r["write_usd"], "read_usd": r["read_usd"], "bits_per_base": r["bits_per_base"],
@@ -210,7 +213,7 @@ def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], covera
 @logged
 def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, scenario: str,
                 n_vaults: int = 3, strand_length: int = 110, decoder: str = "polish", trials: int = 6,
-                target: float = 1.0) -> dict:
+                target: float = 1.0, homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """Red-team a design under a condition it was NOT tuned on. pool_id='all' (recommended) attacks the
     whole archive: a trial only passes if every pool is recovered. scenario:
     'simulator_b' (structurally different sequencing channel), 'decay_x2' (twice the storage time),
@@ -228,7 +231,7 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
         kw["lost_vaults"] = 1
     else:
         return {"error": "scenario must be simulator_b, decay_x2, low_coverage or vault_loss"}
-    r = _experiment(job_id, pool_id, redundancy, strand_length, cov, decoder, trials, True, True, **kw)
+    r = _experiment(job_id, pool_id, redundancy, strand_length, cov, decoder, trials, homopolymer_rule, gc_rule, **kw)
     r.update(scenario=scenario, n_vaults=n_vaults, target=target, passed=r["recovery_rate"] >= target, pool_id=pool_id)
     store.emit(job_id, "stress_result", "adversary", r)
     store.update(job_id, lambda j: j["stress"].append(r))
@@ -236,11 +239,12 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
 
 
 @logged
-def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length: int = 110, n_vaults: int = 3) -> dict:
+def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length: int = 110, n_vaults: int = 3,
+                  homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """Modeled total cost to write every pool at this setting and read it back once, against the budget.
     Prices are Erbgut placeholder prices, not vendor quotes."""
     job = store.load(job_id)
-    s = _settings(redundancy, strand_length, True, True)
+    s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     prof = _profile(job_id, coverage)
     bases = write = read = 0.0
     for pid in job["pools"]:
@@ -265,14 +269,17 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
 
 @logged
 def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vaults: int = 3,
-                          strand_length: int = 110, decoder: str = "polish", design_notes: str = "") -> dict:
+                          strand_length: int = 110, decoder: str = "polish", design_notes: str = "",
+                          homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """REQUIRES HUMAN APPROVAL. Encode every pool with the approved setting, spread strands across
     n_vaults sites (strand i -> vault i mod n), write vendor-ready order.fasta/order.csv per vault, and
     write the self-describing bootstrap manifest (DNA-encoded, full copy in every vault)."""
     job = store.load(job_id)
     if not 1 <= n_vaults <= 6 or not job["sealed"]:
         return {"error": "choose 1–6 vaults and prepare at least one archive file"}
-    s = _settings(redundancy, strand_length, True, True)
+    if n_vaults != int(job["policy"]["n_vaults"]):
+        return {"error": "vault count must match the customer's policy; start a new job to change it"}
+    s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     pools_out, man_pools = {}, {}
     for pid in job["pools"]:
         enc = dna.encode_bytes(_pool_bytes(job_id, pid), s)
@@ -284,15 +291,16 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
            "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
                        "planned_coverage": coverage, "recommended_decoder": decoder},
            "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
-           "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in customer KMS by key_id",
+           "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in local demo keystore by key_id",
            "stream": "pools concatenated in pool-id order form one stream; each file is stream[offset:offset+cipher_bytes]",
            "pools": man_pools, "files": files}
     man_strands = manifest.encode_manifest(man)
     written = vaults.write_vaults(store.job_dir(job_id), n_vaults, pools_out, man_strands)
     total_strands = sum(len(v) for v in pools_out.values())
-    cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults)
+    cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults, homopolymer_rule, gc_rule)
     order = {"settings": {"redundancy": redundancy, "strand_length": strand_length, "coverage": coverage,
-                          "n_vaults": n_vaults, "decoder": decoder}, "design_notes": design_notes,
+                          "n_vaults": n_vaults, "decoder": decoder, "homopolymer_rule": homopolymer_rule,
+                          "gc_rule": gc_rule}, "design_notes": design_notes,
              "order_files": written, "data_strands": total_strands, "manifest_strands": len(man_strands),
              "total_bases": (total_strands + n_vaults * len(man_strands)) * strand_length, "cost": cost,
              "placed": store.now()}
@@ -504,8 +512,9 @@ decoder {e(str(st.get('decoder')))} · {o.get('data_strands')} data strands + {o
 <p>Vaults available: {last['vaults_available'] if last else '-'} of {last['n_vaults'] if last else '-'} · reads/strand {last['coverage'] if last else '-'}</p>
 <table><tr><th>File</th><th>SHA-256 match</th><th>Baseline decoder alone</th><th>CNN decoder alone</th><th>SHA-256</th></tr>{rows_files}</table>
 <h3>Chain of custody</h3><table><tr><th>Time (UTC)</th><th>Agent</th><th>Action</th><th>Status</th></tr>{rows_custody}</table>
-<p><small>DNA synthesis and sequencing are simulated with the Erbgut channel model (calibrated on real Nanopore reads;
-storage decay extrapolated). Costs are modeled placeholders. Codec, simulators and CNN decoder: Erbgut (HackMIT 2026).</small></p>
+<p><small>Demo report, not a regulatory certification or guarantee of future recovery. DNA synthesis and sequencing are simulated
+with the Erbgut channel model (calibrated on real Nanopore reads; storage decay extrapolated). Costs are modeled placeholders.
+Keys are stored in a local demo keystore. Codec, simulators and CNN decoder: Erbgut (HackMIT 2026).</small></p>
 </body></html>"""
 
 

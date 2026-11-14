@@ -81,13 +81,14 @@ Requirements: Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, gi
 
 ```bash
 git clone https://github.com/GravitB/dna.git && cd dna
-cp .env.example .env            # add ANTHROPIC_API_KEY for the deep agent
+cp .env.example .env            # add GOOGLE_API_KEY or ANTHROPIC_API_KEY for the deep agent
 scripts/run.sh                  # fetches Erbgut, installs, builds the UI, serves on :8000
 ```
 Open http://localhost:8000, keep "Include Northstar Bio sample files" ticked, and press **Start archive**.
 
-- **Deep agent mode** needs `ANTHROPIC_API_KEY`. The model defaults to `claude-sonnet-5-5`; override it
-  with `LAZARUS_MODEL=anthropic:<model>`.
+- **Deep agent mode** uses Gemini when `GOOGLE_API_KEY` is set and otherwise uses Anthropic when
+  `ANTHROPIC_API_KEY` is set. Override the model with `LAZARUS_MODEL`, for example
+  `google_genai:gemini-2.5-flash` or `anthropic:<model>`.
 - **Autopilot mode** runs the same tools with a fixed recipe and no LLM. It is clearly labeled in the UI
   and exists so the pipeline can be tested and demoed offline.
 
@@ -127,6 +128,13 @@ LAZARUS_TEAM_PLAN.md          original plan and team contracts
 - Costs use Erbgut's placeholder prices and are always labeled "modeled".
 - Recovery rates come from small trial counts (4–8 per point) on train seeds only (Erbgut's seed
   discipline). We do not pick lucky seeds.
+- This is a local demo, not a compliance certification or production archive. Keys are stored in a
+  local folder that only simulates a customer KMS. The server has no user authentication; do not
+  upload sensitive files or expose it to a network.
+- Vault placement spreads strands across sites; recovery from any chosen K of N sites is not guaranteed.
+  The certificate describes a simulated drill, not a guarantee of future recovery.
+- The bootstrap procedure still depends on the codec's implementation and its dependencies; the
+  short spec alone has not been independently validated as sufficient to reimplement it.
 
 ## Credits
 The DNA codec, both sequencing simulators, the baseline decoder and the CNN decoder are from

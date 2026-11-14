@@ -33,8 +33,8 @@ export default function App() {
         <span className="sub">AI DNA archivist for regulated enterprises</span>
         <span className="spacer" />
         {health && (health.llm
-          ? <span className="pill ok">deep agent online · {String(health.model).replace("anthropic:", "")}</span>
-          : <span className="pill warn">no ANTHROPIC_API_KEY · autopilot only</span>)}
+          ? <span className="pill ok">deep agent configured · {String(health.model)}</span>
+          : <span className="pill warn">no model API key · autopilot only</span>)}
       </div>
       <div className="wrap">{jobId ? <JobView id={jobId} /> : <Home llm={!!health?.llm} />}</div>
     </>
@@ -104,7 +104,7 @@ function Home({ llm }: { llm: boolean }) {
           <div className="small muted">Demo limit 200 KB total. Files are encrypted before encoding.</div>
           <label>Run mode</label>
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="agent" disabled={!llm}>Deep agent (LangChain deepagents + Claude)</option>
+            <option value="agent" disabled={!llm}>Deep agent (LangChain deepagents)</option>
             <option value="autopilot">Autopilot (scripted recipe, no LLM)</option>
           </select>
           <div style={{ marginTop: 14 }}><button className="btn primary" disabled={busy} onClick={submit}>{busy ? "Starting…" : "Start archive"}</button></div>
@@ -121,7 +121,7 @@ function Home({ llm }: { llm: boolean }) {
             <li>An adversary agent tries to break it: lost vault site, a different sequencer, double decay, fewer reads. Failures force a redesign.</li>
             <li>You approve the cost. Lazarus writes vendor-ready FASTA orders per vault, plus a DNA-encoded manifest that explains how to read everything else.</li>
             <li>Disaster drill: originals deleted. A recovery agent reads the vaults with Erbgut's CNN decoder and verifies every file by SHA-256.</li>
-            <li>A compliance agent issues a Recoverability Certificate with full chain of custody.</li>
+            <li>A simulated recovery report records the results and tool history. This is not regulatory certification.</li>
           </ol>
           <p className="small muted">DNA synthesis and sequencing are simulated with Erbgut's channel model, calibrated on real Nanopore reads. Storage decay and prices are modeled.</p>
         </div>
@@ -418,6 +418,8 @@ function Approval({ id, p }: { id: string; p: any }) {
               <div>Redundancy<b>{p.args.redundancy}</b></div>
               <div>Planned reads / strand<b>{p.args.coverage}</b></div>
               <div>Vault sites<b>{p.args.n_vaults ?? 3}</b></div>
+              <div>Limit repeated letters<b>{p.args.homopolymer_rule === false ? "Off" : "On"}</b></div>
+              <div>GC balance rule<b>{p.args.gc_rule === false ? "Off" : "On"}</b></div>
               <div>Bases to synthesize<b>{s.bases?.toLocaleString()}</b></div>
               <div>Write cost (modeled)<b>${s.write_usd}</b></div>
               <div>Read cost per drill (modeled)<b>${s.read_usd}</b></div>
@@ -429,7 +431,7 @@ function Approval({ id, p }: { id: string; p: any }) {
             {p.args.design_notes && <p className="small">{p.args.design_notes}</p>}
           </>
         ) : (
-          <p>This deletes the original uploads and every staging copy. Only the DNA vaults, the one-page bootstrap spec and your KMS keys remain. Then the recovery agent has to rebuild everything from DNA.</p>
+          <p>This deletes the original uploads and every staging copy. The simulated DNA vaults, bootstrap spec and locally stored demo keys remain. Then the recovery agent tries to rebuild the files.</p>
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button className={`btn ${order ? "primary" : "danger"}`} disabled={busy} onClick={() => send("approve")}>{order ? "Approve order" : "Destroy primary data"}</button>

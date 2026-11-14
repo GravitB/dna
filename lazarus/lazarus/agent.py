@@ -20,7 +20,13 @@ from langgraph.types import Command
 
 from . import store, tools
 
-MODEL = os.environ.get("LAZARUS_MODEL", "anthropic:claude-sonnet-5-5")
+MODEL = os.environ.get("LAZARUS_MODEL", "google_genai:gemini-2.5-flash" if (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")) else "anthropic:claude-sonnet-5-5")
+
+
+def has_model_key() -> bool:
+    if isinstance(MODEL, str) and MODEL.startswith("google_genai:"):
+        return bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 SUPERVISOR_PROMPT = """You are Lazarus, an autonomous DNA-archive engineer working for a regulated company.
 Your job: turn the customer's long-retention files into a DNA archive that is PROVEN recoverable, then
@@ -37,11 +43,12 @@ Workflow (write it as todos first with write_todos, keep them updated):
 3. Delegate codec design to the `codec-engineer` subagent. Give it: job_id, reference pool id, policy
    (retention years, tech, planned coverage, budget, target, n_vaults). Ask for the cheapest
    (redundancy, coverage) that meets the target on the normal channel, with evidence.
+   The number of vault sites is fixed by the customer's policy; do not change it.
 4. Delegate red-teaming to the `adversary` subagent with the proposed design. If any scenario fails,
-   REVISE the design (raise redundancy or coverage) and send it back to the adversary. Repeat until all
+   REVISE the design (raise redundancy by at least 0.3 or increase coverage) and send it back to the adversary. Repeat until all
    scenarios pass or you hit budget; then explain the trade-off honestly.
 5. Record the decision and the evidence in /design_notes.md (virtual filesystem).
-6. Call place_synthesis_order with the final design. A human must approve it; if they reject or edit,
+6. Call place_synthesis_order with the final design, including both tested rule settings. A human must approve it; if they reject or edit,
    follow their decision.
 7. Call destroy_primary to start the disaster drill (a human approves this too).
 8. Delegate the drill to the `recovery-engineer` subagent. If any file fails verification, have it retry
@@ -56,18 +63,21 @@ CODEC_PROMPT = """You are the Codec Engineer. You design the DNA encoding for on
 Erbgut codec through tools. Method:
 1. build_profile to see the channel (error rates, strand loss after the storage period).
 2. run_codec_sweep with decoder='baseline', trials 4-6, redundancies like [0.3, 0.6, 1.0] and 1-3
-   coverages around the planned one, to map the recovery/cost frontier.
+   coverages around the planned one, to map the recovery/cost frontier and compare rule combinations.
 3. Confirm the cheapest point that meets the target on the WHOLE archive with run_codec_experiment,
    pool_id='all', decoder='polish', trials 6-8.
 4. estimate_cost for the whole archive at that point.
-Return: the chosen redundancy and coverage, recovery rates with trial counts, modeled costs, and the
+Pass the selected homopolymer_rule and gc_rule to confirmation and cost tools.
+Return: the chosen redundancy, coverage and both rule settings, recovery rates with trial counts, modeled costs, and the
 cheaper points that failed (so the supervisor sees the trade-off). Never invent numbers."""
 
 ADVERSARY_PROMPT = """You are the Adversary. Your job is to BREAK the proposed DNA archive design before
 reality does. Run stress_test with pool_id='all' (the whole archive) for each scenario: vault_loss, simulator_b,
 decay_x2, low_coverage (trials 4-6, decoder 'polish', target as given). Report each result with recovery rate and trial count,
 and say plainly which scenarios fail. Do not soften failures. Suggest the smallest change you would test
-next, but do not claim it works unless you tested it."""
+next, but do not claim it works unless you tested it. Pass the proposed homopolymer_rule and gc_rule to every test.
+For low_coverage pass the original planned coverage, since stress_test itself applies the reduction. Always use the policy's vault count.
+Test each scenario once per design and report the observed result; do not retry the same test looking for a better outcome."""
 
 RECOVERY_PROMPT = """You are the Recovery Engineer. It is decades later; all servers are gone. Run
 recover_archive. It uses only the surviving vaults, the one-page bootstrap spec and the customer's KMS
@@ -86,7 +96,6 @@ def _t(fn) -> StructuredTool:
 
 def build_agent(model: str | None = None):
     from deepagents import create_deep_agent
-    from langchain.agents.middleware import TodoListMiddleware
 
     T = {f.__name__: _t(f) for f in tools.ALL_TOOLS}
     subagents = [
@@ -105,7 +114,6 @@ def build_agent(model: str | None = None):
         system_prompt=SUPERVISOR_PROMPT,
         subagents=subagents,
         interrupt_on={"place_synthesis_order": True, "destroy_primary": True},
-        middleware=[TodoListMiddleware()],
         checkpointer=InMemorySaver(),
         name="lazarus",
     )
@@ -143,7 +151,8 @@ class Run:
         try:
             if tool == "place_synthesis_order":
                 summary = tools.estimate_cost.__wrapped__(self.job_id, float(args.get("redundancy", 1.0)),
-                                                          float(args.get("coverage", 10)), int(args.get("strand_length", 110)), int(args.get("n_vaults", 3)))
+                                                          float(args.get("coverage", 10)), int(args.get("strand_length", 110)), int(args.get("n_vaults", 3)),
+                                                          bool(args.get("homopolymer_rule", True)), bool(args.get("gc_rule", True)))
                 job = store.load(self.job_id)
                 summary["stress"] = [{k: s[k] for k in ("scenario", "recovery_rate", "n_trials", "passed")} | {"redundancy": s["settings"]["redundancy"]}
                                      for s in job["stress"]][-8:]
@@ -169,6 +178,11 @@ class Run:
                     store.emit(self.job_id, "message", "supervisor", {"text": result.get("error") or result.get("stopped")})
             else:
                 self._run_agent()
+                job = store.load(self.job_id)
+                if not job.get("certificate"):
+                    message = "Agent stopped before producing a certificate; check the timeline and model response."
+                    store.update(self.job_id, lambda j: j.update(status="stopped", error=message))
+                    store.emit(self.job_id, "message", "supervisor", {"text": message})
             store.update(self.job_id, lambda j: j.update(finished=True))
             store.emit(self.job_id, "message", "supervisor", {"text": "Run finished."})
         except Exception as e:  # noqa: BLE001
@@ -230,7 +244,11 @@ class Run:
                         store.emit(self.job_id, "delegate", "supervisor", {"subagent": self.current_sub,
                                                                            "description": tc["args"].get("description", "")[:600]})
                     elif tc["name"] in ("write_todos", "write_file", "edit_file") and not in_sub:
-                        if tc["name"] != "write_todos":
+                        if tc["name"] == "write_todos":
+                            store.emit(self.job_id, "plan", "supervisor", {"todos": [
+                                {"text": t.get("content", ""), "status": t.get("status", "pending")}
+                                for t in tc["args"].get("todos", [])]})
+                        else:
                             store.emit(self.job_id, "file_write", "supervisor", {"path": tc["args"].get("file_path"),
                                                                                  "content": (tc["args"].get("content") or tc["args"].get("new_string") or "")[:4000]})
                 text = m.content if isinstance(m.content, str) else " ".join(
