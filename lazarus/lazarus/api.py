@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from . import agent, store, tools, vaults, presentation, artifacts
+from . import agent, store, tools, vaults, presentation, artifacts, experiment, decoder, fasta, crypto  # noqa: E402
 from .persistence import get_cloud, StorageError  # noqa: E402
 
 MAX_UPLOAD_BYTES = 200_000
@@ -57,6 +57,9 @@ async def lifespan(app):
                     error="Server restarted. Start a new archive, or run a recovery drill if vaults exist.",
                 ),
             )
+        if any(s.get("status") == "running" for s in store.load(saved["id"]).get("simulations", [])):
+            experiment.mark_interrupted(saved["id"])
+    decoder.mark_interrupted()
     yield
 
 
@@ -379,19 +382,294 @@ async def drill(job_id: str, body: dict | None = None):
 
 
 @app.get("/api/jobs/{job_id}/files/{name:path}")
-def job_file(job_id: str, name: str):
+def job_file(job_id: str, name: str, download: bool = False):
     try:
         content = artifacts.download(job_id, name)
     except ValueError:
         raise HTTPException(404, "Archive artifact not found")
+    return _file_response(content, Path(name).name, download)
+
+
+def _file_response(content: bytes, filename: str, download: bool = False):
+    media = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if filename.endswith((".fasta", ".tsv")):
+        media = "text/plain; charset=us-ascii"
     return Response(
         content,
-        media_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
+        media_type=media,
         headers={
-            "Content-Disposition": f"inline; filename*=UTF-8''{quote(Path(name).name, safe='')}",
+            "Content-Disposition": f"{'attachment' if download else 'inline'}; filename*=UTF-8''{quote(filename, safe='')}",
             "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# ---------------------------------------------------------------- DNA experiment (pre/post simulation)
+
+
+def _ordered(job_id: str) -> dict:
+    try:
+        job = store.load(job_id)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(404, "Archive not found")
+    if not job.get("order"):
+        raise HTTPException(409, "Approve the archive design first; DNA sequences exist only after approval.")
+    return job
+
+
+@app.get("/api/jobs/{job_id}/dna")
+def dna_export(job_id: str):
+    """Step 1: clean (pre-simulation) DNA export metadata, built from the approved vault files."""
+    _ordered(job_id)
+    try:
+        export = experiment.build_clean_export(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(409, str(exc))
+    job = store.load(job_id)
+    return {
+        "archive_id": job_id,
+        "notice": experiment.DIGITAL_NOTICE,
+        "export": export,
+        "order_settings": job["order"]["settings"],
+        "vault_files": [p for p in job["order"]["order_files"]],
+        "simulations": job.get("simulations", []),
+        "decodes": job.get("decodes", []),
+    }
+
+
+@app.get("/api/jobs/{job_id}/dna/sequences")
+def dna_sequences(job_id: str, offset: int = 0, limit: int = 50, sample: str | None = None):
+    _ordered(job_id)
+    if offset < 0 or not 1 <= limit <= 500:
+        raise HTTPException(400, "offset must be >= 0 and limit 1–500")
+    return experiment.inspect(job_id, offset, limit, sample)
+
+
+@app.post("/api/jobs/{job_id}/simulations", status_code=202)
+def create_simulation(job_id: str, body: dict | None = None):
+    """Step 2: a new, immutable damage simulation of the clean export."""
+    _ordered(job_id)
+    try:
+        return experiment.start_simulation(job_id, body or {})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/jobs/{job_id}/simulations")
+def list_simulations(job_id: str):
+    return store.load(job_id).get("simulations", [])
+
+
+@app.get("/api/jobs/{job_id}/simulations/{sim_id}")
+def get_simulation(job_id: str, sim_id: str):
+    return experiment.get_simulation(job_id, sim_id)
+
+
+@app.get("/api/jobs/{job_id}/simulations/{sim_id}/compare")
+def compare_simulation(job_id: str, sim_id: str, limit: int = 8):
+    if not 1 <= limit <= 40:
+        raise HTTPException(400, "limit must be 1–40")
+    return experiment.compare(job_id, sim_id, limit)
+
+
+@app.post("/api/jobs/{job_id}/recovery-keys")
+def export_keys(job_id: str, body: dict):
+    """Passphrase-protected key file for independent decoding. Keys are never returned in clear."""
+    job = _ordered(job_id)
+    passphrase = body.get("passphrase") if isinstance(body, dict) else None
+    if not isinstance(passphrase, str):
+        raise HTTPException(400, "A passphrase is required.")
+    keys = {f["key_id"]: artifacts.get_key(job_id, f["key_id"]) for f in job["sealed"].values()}
+    try:
+        data = decoder.make_keyfile(job_id, keys, passphrase)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    store.emit(job_id, "message", "human", {"text": "Passphrase-protected recovery key file exported."})
+    return _file_response(data, f"{job_id}_keys.lazarus-keys.json", download=True)
+
+
+# ---------------------------------------------------------------- standalone DNA decoder
+
+MAX_BUNDLE_BYTES = 2_000_000
+MAX_KEYFILE_BYTES = 64_000
+
+
+async def _read_upload(f: UploadFile | None, limit: int, what: str) -> bytes | None:
+    if f is None or not f.filename:
+        return None
+    data = await f.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, f"{what} is larger than {limit // 1_000_000 or limit // 1000} "
+                                 f"{'MB' if limit >= 1_000_000 else 'KB'}.")
+    return data
+
+
+def _json_upload(data: bytes | None, what: str) -> dict | None:
+    if data is None:
+        return None
+    try:
+        doc = json.loads(data)
+        if not isinstance(doc, dict):
+            raise ValueError()
+        return doc
+    except ValueError:
+        raise HTTPException(400, f"{what} is not valid JSON.") from None
+
+
+@app.get("/api/decoder/capabilities")
+def decoder_capabilities():
+    ok, why = decoder.polish_status()
+    return {
+        "decoders": {"baseline": {"available": True, "label": "Majority vote (baseline)"},
+                     "polish": {"available": ok, "reason": why, "label": "Erbgut CNN PolishDecoder"}},
+        "max_fasta_bytes": fasta.MAX_FASTA_BYTES,
+        "formats": ["FASTA", "FASTQ (quality scores ignored)"],
+        "archives": [
+            {"id": j["id"], "name": (s := store.load(j["id"])).get("name") or s["company"],
+             "simulations": [{"id": x["id"], "created": x["created"], "seed": x["settings"]["seed"]}
+                             for x in s.get("simulations", []) if x["status"] == "complete"]}
+            for j in store.list_jobs() if store.load(j["id"]).get("order")
+        ],
+    }
+
+
+@app.post("/api/decoder/sessions", status_code=202)
+async def create_decode(
+    mode: str = Form(...),
+    decoders: str = Form("both"),
+    archive_id: str = Form(""),
+    source: str = Form("upload"),
+    simulation_id: str = Form(""),
+    key_mode: str = Form(""),
+    passphrase: str = Form(""),
+    fasta_file: UploadFile | None = File(None),
+    bundle_file: UploadFile | None = File(None),
+    key_file: UploadFile | None = File(None),
+    simulation_metadata: UploadFile | None = File(None),
+):
+    if mode not in ("existing_archive", "independent_import"):
+        raise HTTPException(400, "mode must be existing_archive or independent_import")
+    chosen = {"both": ["baseline", "polish"], "baseline": ["baseline"], "polish": ["polish"]}.get(decoders)
+    if not chosen:
+        raise HTTPException(400, "decoders must be both, baseline or polish")
+    fasta_bytes = await _read_upload(fasta_file, fasta.MAX_FASTA_BYTES, "The FASTA file")
+    fasta_name = Path(fasta_file.filename).name if fasta_bytes is not None else ""
+    keyfile = await _read_upload(key_file, MAX_KEYFILE_BYTES, "The key file")
+    key_mode = key_mode or ("archive" if mode == "existing_archive" else "keyfile")
+    if key_mode not in ("archive", "keyfile", "none") or (key_mode == "archive" and mode != "existing_archive"):
+        raise HTTPException(400, "key_mode must be archive (existing archives only), keyfile or none")
+
+    keys: dict[str, bytes] = {}
+    keyfile_archive = None
+    if key_mode == "keyfile" and keyfile is not None:
+        try:
+            keyfile_archive, keys = await asyncio.to_thread(decoder.open_keyfile, keyfile, passphrase)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    simulation, bundle, job_id, context = None, None, None, {}
+
+    if mode == "existing_archive":
+        job = _ordered(archive_id)
+        job_id = archive_id
+        if source == "simulation":
+            sim = next((s for s in job.get("simulations", []) if s["id"] == simulation_id), None)
+            if not sim or sim["status"] != "complete":
+                raise HTTPException(404, "Completed simulation not found for this archive")
+            fasta_bytes = artifacts.download(job_id, sim["files"]["post_simulation_reads.fasta"]["path"])
+            fasta_name = "post_simulation_reads.fasta"
+        elif source == "clean":
+            experiment.build_clean_export(job_id)
+            fasta_bytes = artifacts.download(job_id, experiment.PRE_FASTA)
+            fasta_name = "pre_simulation.fasta"
+        elif source != "upload":
+            raise HTTPException(400, "source must be upload, simulation or clean")
+        if fasta_bytes is None:
+            raise HTTPException(400, "Upload a FASTA/FASTQ file or choose a simulation run.")
+        digest = crypto.sha256(fasta_bytes)
+        sim = next((s for s in job.get("simulations", []) if s.get("output_sha256") == digest), None)
+        if sim:
+            meta = json.loads(artifacts.download(job_id, sim["files"]["simulation_metadata.json"]["path"]))
+            simulation = {"simulation_id": sim["id"], "linked_by": "FASTA SHA-256 matches the simulation output",
+                          "settings": meta["settings"], "metrics": meta["metrics"], "profile": meta["profile"]}
+        try:
+            experiment.build_clean_export(job_id)
+            bundle = json.loads(artifacts.download(job_id, experiment.BUNDLE))
+        except FileNotFoundError:
+            bundle = None  # export could not be rebuilt (a vault was lost first); the DNA manifest still applies
+        prior = [d for d in job.get("decodes", []) if d.get("simulation_id")]
+        by_sim = {d["simulation_id"]: d["verdict"] for d in prior}
+        context = {"trial_history": {"trials": len(by_sim), "passed": sum(v == "PASS" for v in by_sim.values()),
+                                     "scope": "earlier decodes of distinct simulation runs of this archive"}} if by_sim else {}
+        if key_mode == "archive":
+            def key_for(kid):
+                try:
+                    return artifacts.get_key(job_id, kid)
+                except (FileNotFoundError, StorageError, ValueError):
+                    return None
+            key_source = "archive key store"
+        else:
+            key_for, key_source = keys.get, ("uploaded key file" if keys else "no keys supplied")
+    else:
+        if fasta_bytes is None:
+            raise HTTPException(400, "Upload the FASTA/FASTQ file to decode.")
+        bundle = _json_upload(await _read_upload(bundle_file, MAX_BUNDLE_BYTES, "The recovery bundle"), "The recovery bundle")
+        if bundle is not None and bundle.get("format") != "lazarus-recovery-bundle-v1":
+            raise HTTPException(400, "The recovery bundle is not a Lazarus recovery bundle.")
+        if bundle and keyfile_archive and bundle.get("archive_id") != keyfile_archive:
+            raise HTTPException(400, "The key file belongs to a different archive than the recovery bundle.")
+        sim_meta = _json_upload(await _read_upload(simulation_metadata, MAX_BUNDLE_BYTES, "Simulation metadata"),
+                                "Simulation metadata")
+        if sim_meta:
+            if (sim_meta.get("output") or {}).get("sha256") != crypto.sha256(fasta_bytes):
+                raise HTTPException(400, "The simulation metadata does not describe this FASTA file (SHA-256 differs).")
+            simulation = {"simulation_id": sim_meta.get("simulation_id"), "linked_by": "uploaded simulation metadata",
+                          "settings": sim_meta.get("settings"), "metrics": sim_meta.get("metrics"),
+                          "profile": sim_meta.get("profile")}
+        archive_id = (bundle or {}).get("archive_id") or keyfile_archive or ""
+        key_for = keys.get
+        key_source = "uploaded key file" if keys else "no keys supplied"
+    try:
+        await asyncio.to_thread(fasta.parse, fasta_bytes)
+    except fasta.FastaError as exc:
+        raise HTTPException(400, f"Invalid sequence file: {exc}")
+
+    req = decoder.DecodeRequest(
+        fasta_bytes=fasta_bytes, fasta_name=fasta_name or "reads.fasta", decoders=chosen, key_for=key_for,
+        key_source=key_source, mode=mode, bundle=bundle, expected_archive_id=archive_id or None,
+        simulation=simulation, archive_context=context,
+    )
+    return decoder.start(req, job_id=job_id, on_done=_record_decode if job_id else None)
+
+
+def _record_decode(session: dict, result: dict) -> None:
+    """Mode A: keep the outcome with the archive (and in Supabase when cloud storage is on)."""
+    jid, sid = session["job_id"], session["id"]
+    report = result["report"]
+    artifacts.publish(jid, f"decodes/{sid}/verification_report.json", json.dumps(report, indent=2).encode())
+    artifacts.publish(jid, f"decodes/{sid}/verification_report.html", decoder.render_html(report).encode())
+    summary = {"id": sid, "created": session["created"], "verdict": report["verdict"],
+               "simulation_id": session.get("simulation_id"), "decoders": session["decoders"],
+               "files_verified": sum(f["verified"] for f in report["files"]), "files": len(report["files"])}
+    store.update(jid, lambda j: j.setdefault("decodes", []).append(summary))
+    store.emit(jid, "message", "recovery-engineer",
+               {"text": f"Independent decode {sid}: {report['verdict']} ({summary['files_verified']}/{summary['files']} files verified)."})
+
+
+@app.get("/api/decoder/sessions")
+def decode_sessions():
+    return decoder.list_sessions()
+
+
+@app.get("/api/decoder/sessions/{sid}")
+def decode_session(sid: str):
+    return decoder.load_session(sid)
+
+
+@app.get("/api/decoder/sessions/{sid}/files/{name:path}")
+def decode_file(sid: str, name: str, download: bool = False):
+    data, filename = decoder.session_file(sid, name)
+    return _file_response(data, filename, download)
 
 
 if WEB_DIST.exists():
@@ -399,6 +677,8 @@ if WEB_DIST.exists():
 
     @app.get("/{path:path}")
     def spa(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, "Unknown API path")
         f = WEB_DIST / path
         if path and f.is_file() and WEB_DIST in f.resolve().parents:
             return FileResponse(f)
