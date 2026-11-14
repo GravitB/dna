@@ -177,6 +177,8 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
         return {"error": "This archive is already ordered. Create a revised archive."}
     uploads = d / "uploads"
     sealed, stream = {}, b""
+    org_id = job.get("org_id")
+    deks: dict[str, bytes] = {}
     for name in file_names:
         src = uploads / Path(name).name
         if not src.exists():
@@ -184,7 +186,10 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
         data = src.read_bytes()
         key = crypto.new_key()
         key_id = f"kms-{job_id}-{len(sealed):02d}"
-        artifacts.put_key(job_id, key_id, key)
+        if org_id:
+            deks[key_id] = key  # wrapped under the organization master key below, never stored raw
+        else:
+            artifacts.put_key(job_id, key_id, key)
         nonce, ct = crypto.seal(data, key)
         sealed[src.name] = {
             "key_id": key_id,
@@ -215,10 +220,15 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
     for p, v in pools.items():
         v["files"] = [n for n, f in sealed.items() if p in f["pools"]]
     ref = max(pools, key=lambda p: pools[p]["bytes"]) if pools else None
+    km = None
+    if org_id:
+        from . import orgs
+        km = orgs.wrap_for_archive(org_id, job_id, deks)
     store.update(
         job_id,
         lambda j: j.update(
-            pools=pools, sealed=sealed, tier_notes=tier_notes, status="prepared"
+            pools=pools, sealed=sealed, tier_notes=tier_notes, status="prepared",
+            **({"key_management": km} if km else {}),
         ),
     )
     return {
@@ -443,6 +453,15 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
 # ---------------------------------------------------------------- order (needs human approval)
 
 
+def key_custody(job: dict) -> dict:
+    """Manifest field saying where data keys come from. Organization archives name the org only:
+    master-key versions change on rotation, the DNA manifest never does."""
+    if job.get("org_id"):
+        return {"keys": {"custody": "organization master key (envelope)", "org_id": job["org_id"],
+                         "wrapped_keys": "in the archive's Recovery Package (encryption/wrapped_keys.json)"}}
+    return {"keys": {"custody": "per-archive key file (legacy)"}}
+
+
 @logged
 def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vaults: int = 3,
                           strand_length: int = 110, decoder: Decoder = "polish", design_notes: str = "",
@@ -488,7 +507,8 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
                "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
                            "planned_coverage": coverage, "recommended_decoder": decoder},
                "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
-               "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in local demo keystore by key_id",
+               "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, per-file data key by key_id",
+               **key_custody(job),
                "stream": "pools concatenated in pool-id order form one stream; each file is stream[offset:offset+cipher_bytes]",
                "pools": man_pools, "files": files}
     man_strands = manifest.encode_manifest(man)

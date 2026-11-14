@@ -138,7 +138,12 @@ def archive_manifest(job, candidate_id, c):
                         'planned_coverage': c['policy']['coverage'], 'recommended_decoder': 'polish'},
             'n_vaults': c['policy']['n_vaults'], 'crypto': 'zstd then AES-256-GCM, aad=lazarus-v1',
             'pools': {pid: {**p['meta'], 'offset': job['pools'][pid]['offset']} for pid, p in c['pools'].items()},
-            'files': files}
+            'files': files, **_key_custody(job)}
+
+
+def _key_custody(job):
+    from .tools import key_custody
+    return key_custody(job)
 
 
 def cost(job_id, candidate_id):
