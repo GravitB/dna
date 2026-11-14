@@ -170,10 +170,12 @@ describe("DNA experiment workflow", () => {
       return response({});
     });
     render(<App />);
-    fireEvent.click(await screen.findByLabelText(/B — Independent import/));
+    fireEvent.click(await screen.findByLabelText(/B — Independent long-term recovery/));
+    expect(screen.getByLabelText(/lazarus-recovery-package-v1.zip/)).toBeTruthy();
+    expect(screen.getByLabelText(/Organization master key backup/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Run Decoding" }));
-    await screen.findByText("Choose a FASTA or FASTQ file to decode.");
-    const input = screen.getByLabelText(/FASTA or FASTQ reads/) as HTMLInputElement;
+    await screen.findByText("Choose the sequencing read files (FASTA or FASTQ).");
+    const input = screen.getByLabelText(/Sequencing reads/) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File([">r sample=MANIFEST\nACGT\n"], "reads.fasta")] } });
     fireEvent.click(screen.getByRole("button", { name: "Run Decoding" }));
     await screen.findByText(/No file was recovered with a matching hash/);

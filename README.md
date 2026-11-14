@@ -171,7 +171,7 @@ Everything here is digital. No DNA is synthesized or sequenced, and the UI label
    scores, because the simulator does not model them. Strand identities and per-read edit alignments go
    to a separate `ground_truth.tsv` that the decoder never reads. **Compare Before vs. After**
    highlights substitutions, insertions and deletions against the source strand.
-4. **DNA Decoder** (main navigation). It takes FASTA or FASTQ (qualities ignored) and has two modes.
+4. **DNA Decoder** (main navigation). It takes FASTA or FASTQ (gzip allowed; FASTQ qualities filter low-quality reads) and has two modes.
    - **A: Existing archive.** Uses the archive's approved recovery bundle and key store, never its uploads.
      The input can be an uploaded file, a simulation run, or the clean FASTA as a control.
    - **B: Independent import.** Needs only the FASTA, an optional `recovery_bundle.json` (non-secret) and
@@ -210,14 +210,111 @@ New endpoints (all under `/api`):
 | `GET /decoder/sessions/{sid}/files/{report.json, report.html, recovered/<n>}` | Reports and verified files |
 
 Limitations:
-- Reads must carry their pool label (`sample=` or `vault-N|pool|index`). Lazarus pools share Fountain
-  seed spaces, so in a wet lab they would be separated by primers or barcodes before decoding. Reads are
-  assumed to be forward-strand, because the simulator does not reverse-complement them.
+- Every read must be assigned to a physical sample: by the lab's demultiplexed files plus a sample
+  sheet, or a `sample=` header label. Lazarus pools share Fountain seed spaces and the strands carry no
+  primers or barcodes, so unassigned mixed reads cannot be separated by sequence. The decoder stops with
+  an explanation instead of guessing.
 - Decoder sessions are stored locally (`jobs/_decoder_sessions`). In Supabase mode, mode-A reports are also
   saved with the archive; independent (mode B) sessions stay local.
-- Real sequencing data can be used once it is basecalled to FASTQ, demultiplexed per pool (sample label in
-  the header) and trimmed of primers or adapters to the 110-nt payload. Reverse-complement
-  normalization and primer trimming would be the next stages to add.
+- The decoder does not trim library-prep adapters or primers. Reads must cover the 110-nt strand.
+
+## Long-term recovery: organization keys, Recovery Packages, offline decoder
+
+The goal: encode files today, keep **one** master key backup, and recover any archive decades later
+with only the DNA reads, that archive's Recovery Package and the backup, even if Lazarus no longer exists.
+
+**Organization master keys (envelope encryption).** Each organization gets a random 256-bit master
+key (KEK), versioned. Every archived file still gets its own random 256-bit data key (DEK), which
+encrypts the file (zstd + AES-256-GCM). For organization archives, the DEKs are stored only *wrapped*
+with AES-256-GCM under the master key. Each wrap uses a fresh 96-bit nonce and an AAD that binds it to
+the org id, archive id, key id and master-key version. The master key leaves the server only as a
+passphrase-protected backup (scrypt + AES-256-GCM, `lazarus-org-master-key-v1`). Archives can be
+protected by a key version only after that version has been backed up. Custody sits behind a
+`KekStore` interface, so a KMS/HSM can replace the local keystore. Recovery never depends on that
+store, only on the exported backup.
+
+- **Rotation** creates version n+1 and re-wraps every archive's DEKs, without touching the DNA. A new
+  package revision is issued for each archive. Packages issued earlier still need a backup holding
+  version n; the decoder says so explicitly.
+- **Migration** wraps a legacy archive's existing per-file keys under the master key. It switches the
+  archive over only after a full decode of the archive's DNA with the wrapped keys passes. Legacy key
+  files are kept unless deletion is requested, and even then only after that check passes.
+- **Authorization**: each organization has an access token, shown once and stored only as a SHA-256.
+  Key export, rotation, migration and package downloads require it.
+
+**Long-Term Recovery Package** (`lazarus-recovery-package-v1.zip`, spec: [docs/RECOVERY_PACKAGE.md](docs/RECOVERY_PACKAGE.md)):
+
+| Part | Contents |
+|---|---|
+| Archive | manifest, files (sizes, SHA-256, nonces, offsets), stream layout |
+| Encoding | codec settings per pool, Fountain parameters, bootstrap settings, dependency versions |
+| Encryption | wrapped DEKs, org id, master-key version and fingerprint, algorithms |
+| Sequencing | sample sheet and demultiplexing guide |
+| Synthesis | clean FASTA (also downloadable on its own), per-vault orders, one FASTA per physical sample, requirements |
+| Decoder | offline decoder source, lockfile, install and reproducible-build steps |
+| Specs | `BOOTSTRAP.md`, `RECOVERY_PACKAGE.md`, plus SHA256SUMS over everything |
+
+The package contains no unwrapped key and no master key. It is read in memory and never extracted.
+Every member must match SHA256SUMS, and unsafe member names are rejected. The package includes the
+bundled Erbgut codec source (`decoder/dna_codec/`, see Credits) with a per-file SHA-256 lock, and the
+decoder reports whether the codec it imports matches it.
+
+**Offline decoder.**
+
+```
+cd decoder && python -m venv .venv && .venv/bin/pip install -r requirements.lock
+.venv/bin/python -m lazarus.offline_decode \
+    --recovery-package ../lazarus-recovery-package-v1.zip \
+    --reads-sheet lab_samples.csv \
+    --master-key organization-master-key.json \
+    --output ./recovered
+```
+
+- **Inputs:**
+  - **Reads:** FASTA or FASTQ, gzip allowed. Pass `--reads [SAMPLE_ID=]file` once per file, or a
+    `file,sample_id` sheet via `--reads-sheet`.
+  - **Legacy archives:** use `--keyfile` instead of `--master-key`.
+- **Passphrase:** comes from a hidden prompt or `--passphrase-env`, never from the command line.
+- **Exit codes:** 0 = PASS, 1 = not PASS, 2 = bad input, 3 = key problem.
+- **Check an install:** `--self-test` checks the package and the codec without any key.
+- **Also installed** as `lazarus-decode` in this repo (`uv run lazarus-decode …`).
+
+**Laboratory reads.**
+
+- Parsing: FASTQ qualities are validated. Reads with mean Phred below 7 (configurable) are dropped;
+  consensus ignores per-base qualities. Reads with N or IUPAC codes, and overlong reads, are dropped
+  and counted.
+- Orientation: reverse-strand reads are recognised by checking each consensus strand's CRC in both
+  orientations.
+- Coverage: duplicates, missing strands, shuffled order and uneven coverage are handled by clustering
+  and the Fountain code.
+- Reports distinguish three evidence levels: *simulated reads*, *laboratory-format reads* and
+  *physical recovery*. Lazarus has not demonstrated physical recovery, and every report says so.
+
+**Web.**
+
+- The **Organization keys** page covers onboarding, backup, verify/restore, rotation and migration.
+- An approved archive shows **Download Clean FASTA**, **Download Recovery Package**,
+  **View Synthesis Requirements** and **Test Independent Recovery**.
+- On the DNA Decoder page, mode B imports reads, a Recovery Package and a master key backup (or a
+  legacy key file).
+
+| Endpoint (`/api`) | Purpose |
+|---|---|
+| `POST /orgs` | Create organization + master key v1; returns the access token once |
+| `GET /orgs/{org}` | Status (versions, fingerprints, backups, archives) |
+| `POST /orgs/{org}/master-key/backup` | Passphrase-protected backup (all versions or current) |
+| `POST /orgs/restore` (multipart) | Verify a backup here, or re-establish the org on a new server |
+| `POST /orgs/{org}/master-key/rotate` | New version, re-wrap all archives, re-issue packages |
+| `GET /orgs/{org}/legacy-archives`, `POST /orgs/{org}/migrate` | Verified migration of legacy archives |
+| `POST/GET /jobs/{id}/recovery-package` | Build / download the latest package revision |
+| `GET /jobs/{id}/synthesis-requirements` | Manufacturing assumptions (markdown) |
+| `POST /jobs/{id}/recovery-package/test` | Decode using only the package's metadata and wrapped keys |
+
+Org-scoped requests send `X-Lazarus-Org-Token`. Storage: `jobs/_orgs/{org}/org.json` and
+`keks/v{n}.key`. Each archive's `job.json` gains `org_id`, `key_management` (wrapped keys and version
+history) and `recovery_package` (revision history). Packages live in
+`exports/recovery_package/r{n}.zip`.
 
 ## Cloud storage
 
@@ -233,6 +330,11 @@ lazarus/lazarus/fasta.py      strict FASTA/FASTQ parsing and writing
 lazarus/lazarus/experiment.py clean pre-simulation export, reproducible damage simulations
 lazarus/lazarus/clustering.py reference-free read clustering (no simulator labels)
 lazarus/lazarus/decoder.py    standalone decoder, verdicts, verification reports, key files
+lazarus/lazarus/orgkeys.py    master keys, envelope wrapping, passphrase-protected backups (portable)
+lazarus/lazarus/orgs.py       organizations: key custody, backup/restore, rotation, migration
+lazarus/lazarus/package_format.py  Recovery Package reader/writer with integrity checks (portable)
+lazarus/lazarus/recovery_package.py  builds the Long-Term Recovery Package for an archive
+lazarus/lazarus/offline_decode.py    lazarus-decode, the offline command-line decoder
 lazarus/lazarus/tools.py      agent tools, event stream, custody log, certificate
 lazarus/lazarus/agent.py      deepagents supervisor + 4 subagents + human-in-the-loop runner
 lazarus/lazarus/autopilot.py  scripted no-LLM run of the same tools
@@ -249,9 +351,12 @@ LAZARUS_TEAM_PLAN.md          original plan and team contracts
 - Costs use Erbgut's placeholder prices and are always labeled "modeled".
 - Recovery rates come from small trial counts (4–8 per point) on train seeds only (Erbgut's seed
   discipline). We do not pick lucky seeds.
-- This is a local demo, not a compliance certification or production archive. Keys are stored in a
-  local folder that only simulates a customer KMS. The server has no user authentication; do not
-  upload sensitive files or expose it to a network.
+- This is a local demo, not a compliance certification or production archive. Master keys and legacy
+  keys are stored in a local folder that only simulates a customer KMS. Only organization key
+  operations require a token; archive pages themselves have no user authentication. Do not upload
+  sensitive files or expose the server to a network.
+- Recovery Packages have been tested on simulated and laboratory-format reads, never on reads from
+  synthesized DNA. The synthesis requirements have not been validated with any provider.
 - Vault placement spreads strands across sites; recovery from any chosen K of N sites is not guaranteed.
   The certificate describes a simulated drill, not a guarantee of future recovery.
 - The bootstrap procedure still depends on the codec's implementation and its dependencies; the

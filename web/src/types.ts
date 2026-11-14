@@ -90,6 +90,22 @@ export type Archive = ArchiveSummary & {
   stress: any[];
   experiments: any[];
   vaults: { vault_id: number; status: string }[];
+  org_id?: string;
+  key_management?: {
+    mode: "organization" | "legacy";
+    org_id?: string;
+    kek_version?: number;
+    kek_fingerprint?: string;
+    migrated_from?: string;
+  };
+  recovery_package?: {
+    revision: number;
+    sha256: string;
+    bytes: number;
+    created: string;
+    encryption?: { mode: string; kek_version?: number };
+  };
+  simulations?: { id: string; status: string }[];
 };
 export type Ev = {
   seq: number;
@@ -242,7 +258,16 @@ export type DecodeSession = {
         manifest_recovered?: boolean;
       }
     >;
-    input: { filename: string; format: string; records: number; sha256: string; samples: Record<string, number> };
+    input: {
+      filename: string;
+      format: string;
+      records: number;
+      sha256: string | null;
+      samples: Record<string, number>;
+      quality_scores?: string;
+      unlabeled_records?: number;
+    };
     simulation_id: string | null;
+    evidence?: { level: string; text: string; physical_dna_validated: boolean };
   };
 };

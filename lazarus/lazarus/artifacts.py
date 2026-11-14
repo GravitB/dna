@@ -25,7 +25,16 @@ def put_key(jid, key_id, key):
 
 
 def get_key(jid, key_id):
+    """The data key for one archive file. Organization archives hold only wrapped keys; they are
+    unwrapped with the organization's master key (never stored in the clear next to the archive)."""
     key_name(key_id)
+    km = store.load(jid).get("key_management") or {}
+    if km.get("mode") == "organization":
+        from . import orgs
+        keys = orgs.unwrap_for_archive(km)
+        if key_id not in keys:
+            raise FileNotFoundError("Unknown archive key")
+        return keys[key_id]
     cloud = get_cloud()
     if cloud:
         return cloud.get_key(jid, key_id)
@@ -51,6 +60,8 @@ def download(jid, path):
         vault_id = path.split("/")[1].removeprefix("vault-")
         if job.get("vault_locations", {}).get(vault_id) == "destroyed":
             raise FileNotFoundError("Simulated storage location is unavailable")
+    elif path.startswith("exports/recovery_package/"):
+        raise FileNotFoundError("Download Recovery Packages through the recovery-package endpoint")
     elif path.startswith("exports/"):
         if not job.get("order"):
             raise FileNotFoundError("No approved archive order")
@@ -94,5 +105,7 @@ def verify_order(jid):
         )
     for path in job["order"]["order_files"]:
         cloud.get_artifact(jid, path)
+    if (job.get("key_management") or {}).get("mode") == "organization":
+        return  # wrapped keys live in the archive record itself
     for f in job["sealed"].values():
         cloud.get_key(jid, f["key_id"])

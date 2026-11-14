@@ -12,8 +12,16 @@ MANIFEST reads -> per pool: reference-free clustering -> consensus (majority vot
 PolishDecoder) -> Fountain recovery -> reassemble the encrypted stream -> AES-256-GCM decrypt ->
 zstd decompress -> SHA-256 check against the manifest (and the recovery bundle if supplied).
 
+Laboratory reads: several files may be supplied, each optionally assigned to a sample (tube) by
+the user's sample sheet; sample ids resolve to pools through the Recovery Package's sample sheet.
+FASTQ reads below a mean Phred threshold are filtered out; consensus itself ignores per-base
+qualities (majority vote and the CNN take bases only). Reads sequenced from the reverse strand are
+handled by checking each consensus strand's CRC in both orientations.
+
 Verdicts: PASS (every expected file hash matches), PARTIAL (some do), FAIL (none do),
 INCOMPLETE (metadata or keys needed to finish were unavailable).
+
+Importable without any server state: sessions (which use the job store) import it lazily.
 """
 
 from __future__ import annotations
@@ -36,7 +44,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from . import clustering, crypto, dna, fasta, manifest, store, vaults
+from . import clustering, crypto, dna, fasta, manifest
 from dna_codec.encoder import _Layout  # strand CRC check only, for reporting valid consensus strands
 
 DECODERS = ("baseline", "polish")
@@ -51,6 +59,29 @@ VERDICT_TEXT = {
 DISCLAIMER = ("This report describes one decoding attempt of digital/simulated DNA reads. A single passing "
               "trial is not an estimate of reliability and not proof of long-term physical DNA recoverability. "
               "No DNA was synthesized or sequenced.")
+LAB_DISCLAIMER = ("This report describes one decoding attempt of reads supplied as laboratory-format FASTA/FASTQ. "
+                  "Lazarus cannot verify where the reads came from. Physical DNA recovery is only demonstrated "
+                  "when the reads come from sequencing synthesized, Lazarus-encoded DNA, which this report "
+                  "does not establish on its own.")
+EVIDENCE = {
+    "clean_design": "Clean design FASTA (no damage): checks metadata, keys and decoding only.",
+    "simulated_reads": "Simulated sequencing reads (Erbgut channel model): a digital experiment, not a lab result.",
+    "lab_format_reads": "Laboratory-format reads (demultiplexed FASTA/FASTQ supplied by the user): format "
+                        "compatibility; physical recovery is validated only for reads from synthesized DNA.",
+    "unknown": "Reads of unstated origin.",
+}
+DEFAULT_MIN_QUALITY = 7.0
+_COMP = str.maketrans("ACGT", "TGCA")
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def revcomp(s: str) -> str:
+    return s.translate(_COMP)[::-1]
 
 
 # ------------------------------------------------------------------ key file
@@ -111,17 +142,32 @@ def polish_status() -> tuple[bool, str | None]:
 
 
 @dataclass
+class ReadInput:
+    """One sequencing file. `sample` assigns every read in it to a sample/tube (from the user's
+    lab sample sheet); otherwise each read's own `sample=` header label is used."""
+
+    name: str
+    data: bytes
+    sample: str | None = None
+
+
+@dataclass
 class DecodeRequest:
     fasta_bytes: bytes
     fasta_name: str
     decoders: list[str]
     key_for: Callable[[str], bytes | None]
     key_source: str
-    mode: str  # "existing_archive" | "independent_import"
+    mode: str  # "existing_archive" | "independent_import" | "package_recovery" | ...
     bundle: dict | None = None
     expected_archive_id: str | None = None
     simulation: dict | None = None
     archive_context: dict = field(default_factory=dict)
+    inputs: list[ReadInput] | None = None  # several files (lab runs); overrides fasta_bytes
+    sample_map: dict[str, str] = field(default_factory=dict)  # lab sample id -> pool id
+    lab: bool = False  # lenient laboratory parsing (gzip, N reads dropped, long reads dropped)
+    min_mean_quality: float | None = None  # FASTQ read filter; None -> DEFAULT_MIN_QUALITY in lab mode
+    evidence: str | None = None  # key of EVIDENCE; inferred when None
 
 
 def _valid_strands(strands, settings) -> int:
@@ -132,33 +178,97 @@ def _valid_strands(strands, settings) -> int:
     return sum(layout.parse(s) is not None for s in strands if s)
 
 
+def orient(strands: list, settings) -> tuple[list, int]:
+    """Real sequencers read either strand of the duplex. A consensus built from reverse-strand
+    reads fails the strand CRC as-is but passes after reverse-complementing; nothing else is
+    changed. Returns (strands, number flipped)."""
+    try:
+        layout = _Layout(settings)
+    except ValueError:
+        return strands, 0
+    out, flipped = [], 0
+    for s in strands:
+        if s and layout.parse(s) is None:
+            rc = revcomp(s)
+            if layout.parse(rc) is not None:
+                out.append(rc)
+                flipped += 1
+                continue
+        out.append(s)
+    return out, flipped
+
+
+UNLABELED_HELP = (
+    "Reads carry no sample (tube) assignment. Lazarus archives so far are synthesized without "
+    "in-molecule primers or barcodes, so reads of different pools cannot be told apart by sequence, "
+    "and Lazarus will not guess. Supply the sequencing facility's demultiplexed files, one per physical "
+    "sample, with a sample sheet (file, sample_id) whose sample ids appear in the Recovery Package's "
+    "sequencing/sample_sheet.csv, or label each read 'sample=<pool>' in its header.")
+
+
 def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *a: None):
     """Returns (report, recovered) where recovered = {file name: verified plaintext bytes}."""
     t0 = time.time()
     missing: list[str] = []
     warnings: list[str] = []
     progress("parse", "running", "Parsing and validating reads")
-    fmt, records = fasta.parse(req.fasta_bytes)
+    inputs = req.inputs or [ReadInput(req.fasta_name, req.fasta_bytes)]
+    min_q = req.min_mean_quality if req.min_mean_quality is not None else DEFAULT_MIN_QUALITY  # FASTQ only
     by_sample: dict[str, list[str]] = defaultdict(list)
-    unlabeled = 0
-    for r in records:
-        s = r.sample
-        if s is None:
-            unlabeled += 1
-        else:
-            by_sample[s].append(r.sequence)
-    lengths = [len(r.sequence) for r in records]
+    unlabeled = low_quality = 0
+    unknown_samples: set[str] = set()
+    files_info, lengths, formats = [], [], set()
+    lab_stats = fasta.ReadStats()
+    total_records = 0
+    for inp in inputs:
+        fmt, records = fasta.parse(inp.data, lenient=req.lab, stats=lab_stats if req.lab else None)
+        formats.add(fmt)
+        total_records += len(records)
+        kept = 0
+        for r in records:
+            if min_q is not None and r.quality is not None and r.mean_quality < min_q:
+                low_quality += 1
+                continue
+            label = inp.sample or r.sample
+            if label is None:
+                unlabeled += 1
+                continue
+            pool = req.sample_map.get(label, label)
+            if req.sample_map and label not in req.sample_map and label not in req.sample_map.values():
+                unknown_samples.add(label)
+            by_sample[pool].append(r.sequence)
+            lengths.append(len(r.sequence))
+            kept += 1
+        files_info.append({"filename": inp.name, "format": fmt, "sha256": crypto.sha256(inp.data),
+                           "bytes": len(inp.data), "records": len(records), "used": kept,
+                           "assigned_sample": inp.sample})
+    fmt = formats.pop() if len(formats) == 1 else "mixed"
+    first = files_info[0]
     input_info = {
-        "filename": req.fasta_name, "format": fmt, "sha256": crypto.sha256(req.fasta_bytes),
-        "bytes": len(req.fasta_bytes), "records": len(records),
+        "filename": first["filename"] if len(files_info) == 1 else f"{len(files_info)} files",
+        "format": fmt, "sha256": first["sha256"] if len(files_info) == 1 else None,
+        "bytes": sum(f["bytes"] for f in files_info), "records": total_records,
+        "files": files_info,
         "samples": {k: len(v) for k, v in sorted(by_sample.items())}, "unlabeled_records": unlabeled,
-        "length": {"min": min(lengths), "max": max(lengths), "mean": round(sum(lengths) / len(lengths), 2)},
-        "quality_scores": "ignored" if fmt == "fastq" else "none (FASTA)",
+        "length": ({"min": min(lengths), "max": max(lengths), "mean": round(sum(lengths) / len(lengths), 2)}
+                   if lengths else None),
+        "quality_scores": (
+            "none (FASTA)" if fmt == "fasta" else
+            f"used for read filtering only: reads with mean Phred < {min_q:g} dropped ({low_quality}); "
+            "consensus ignores per-base qualities" if min_q is not None else
+            "preserved but not used (no quality filter set); consensus ignores per-base qualities"),
+        "low_quality_reads_dropped": low_quality,
+        **(lab_stats.as_dict() if req.lab else {}),
+        "lab_mode": req.lab,
     }
-    if unlabeled:
-        warnings.append(f"{unlabeled} records carry no sample (pool) label and were not used. "
-                        "Label reads with 'sample=<pool>' in the header, as produced by demultiplexing.")
-    progress("parse", "done", f"{len(records)} {fmt.upper()} records, {len(by_sample)} samples")
+    if unknown_samples:
+        warnings.append(f"Sample ids not in the sample sheet were used as pool names: {', '.join(sorted(unknown_samples))}.")
+    if unlabeled and not by_sample:
+        missing.append("sample assignment: " + UNLABELED_HELP)
+    elif unlabeled:
+        warnings.append(f"{unlabeled} reads carry no sample (pool) label and were not used. " + UNLABELED_HELP)
+    progress("parse", "done", f"{total_records} {fmt.upper()} records in {len(files_info)} file(s), "
+                              f"{len(by_sample)} samples")
 
     ok_polish, why_polish = polish_status()
     decoders = []
@@ -176,14 +286,16 @@ def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *
     # ---- 1. manifest via the bootstrap spec
     progress("manifest", "running", "Decoding the DNA bootstrap manifest")
     man, man_source = None, None
-    man_reads = by_sample.get(vaults.MANIFEST_POOL, [])
+    man_reads = by_sample.get(manifest.MANIFEST_POOL, [])
     m_clusters, m_stats = clustering.cluster_reads(man_reads, manifest.BOOTSTRAP.strand_length)
     for d in decoders:
         t = time.time()
         cons = dna.decode_clusters(m_clusters, manifest.BOOTSTRAP.strand_length, d) if m_clusters else []
+        cons, flipped = orient(cons, manifest.BOOTSTRAP)
         got = manifest.decode_manifest(cons) if cons else None
         per_dec[d]["manifest"] = {"recovered": got is not None, "clusters": len(m_clusters),
-                                  "valid_strands": _valid_strands(cons, manifest.BOOTSTRAP)}
+                                  "valid_strands": _valid_strands(cons, manifest.BOOTSTRAP),
+                                  "reverse_complement_strands": flipped}
         per_dec[d]["seconds"] += time.time() - t
         if got is not None and man is None:
             man, man_source = got, "dna"
@@ -209,7 +321,7 @@ def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *
 
     # ---- 2. pools
     pool_bytes: dict[str, dict[str, bytes | None]] = {d: {} for d in decoders}
-    cluster_stats = {vaults.MANIFEST_POOL: m_stats}
+    cluster_stats = {manifest.MANIFEST_POOL: m_stats}
     if man and decoders:
         pools = sorted(man["pools"].items())
         for n, (pid, meta_d) in enumerate(pools, 1):
@@ -222,12 +334,14 @@ def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *
             for d in decoders:
                 t = time.time()
                 cons = dna.decode_clusters(clusters, L, d) if clusters else []
+                cons, flipped = orient(cons, meta.settings)
                 data = dna.recover_bytes(cons, meta) if cons else None
                 pool_bytes[d][pid] = data
                 per_dec[d]["pools"][pid] = {
                     "reads": len(by_sample.get(pid, [])), "clusters": len(clusters),
                     "strands_written": written, "reconstructed_strands": len(cons),
                     "valid_strands": _valid_strands(cons, meta.settings),
+                    "reverse_complement_strands": flipped,
                     "chunks_needed": meta.n_chunks, "recovered": data is not None,
                 }
                 per_dec[d]["seconds"] += time.time() - t
@@ -323,6 +437,7 @@ def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *
                                  "PARTIAL" if any(v == "verified" for v in fs.values()) else
                                  "INCOMPLETE" if not man or any(v == "key_missing" for v in fs.values()) else "FAIL")
     pools_meta = (man or {}).get("pools", {})
+    evidence = _evidence(req)
     report = {
         "format": "lazarus-verification-report-v1",
         "mode": req.mode,
@@ -356,9 +471,20 @@ def run(req: DecodeRequest, progress: Callable[[str, str, str], None] = lambda *
         },
         "files": files_out,
         "trial_scope": "single decoding trial",
-        "disclaimer": DISCLAIMER,
+        "evidence": {"level": evidence, "text": EVIDENCE[evidence], "physical_dna_validated": False},
+        "disclaimer": LAB_DISCLAIMER if evidence == "lab_format_reads" else DISCLAIMER,
     }
     return report, recovered
+
+
+def _evidence(req: DecodeRequest) -> str:
+    if req.evidence in EVIDENCE:
+        return req.evidence
+    if req.simulation:
+        return "simulated_reads"
+    if req.lab:
+        return "lab_format_reads"
+    return "unknown"
 
 
 # ------------------------------------------------------------------ report rendering
@@ -400,7 +526,7 @@ def render_html(r: dict) -> str:
 table{{border-collapse:collapse;width:100%;margin:8px 0 20px}}td,th{{border:1px solid #ddd;padding:4px 8px;text-align:left;vertical-align:top}}
 code{{font-size:11px;word-break:break-all}}.v{{font-size:24px;font-weight:700;color:{color}}}small{{color:#666}}</style></head><body>
 <h1>Lazarus DNA Verification Report</h1>
-<p><b>Simulated / digital experiment.</b> {e(r['disclaimer'])}</p>
+<p><b>Evidence: {e((r.get('evidence') or {}).get('text', 'digital experiment'))}</b> {e(r['disclaimer'])}</p>
 <p class="v">{e(r['verdict'])}</p><p>{e(r['verdict_text'])}</p>
 {''.join(f'<p>Missing: {e(x)}</p>' for x in r['missing'])}{''.join(f'<p><small>Note: {e(x)}</small></p>' for x in r['warnings'])}
 <h2>Archive details</h2>
@@ -408,7 +534,10 @@ code{{font-size:11px;word-break:break-all}}.v{{font-size:24px;font-weight:700;co
 {e(a.get('data_strands_written'))} data strands written · session {e(r.get('session_id'))} · {e(r.get('created'))}</p>
 <pre>{e(json.dumps(a.get('encoder_configuration'), indent=1))}</pre>
 <h2>Input</h2><p>{e(r['input']['filename'])} · {e(r['input']['format'])} · {e(r['input']['records'])} records ·
-SHA-256 <code>{e(r['input']['sha256'])}</code></p>
+quality: {e(r['input'].get('quality_scores'))}</p>
+<ul>{''.join(f"<li>{e(f['filename'])} · {e(f['format'])} · {e(f['records'])} records ({e(f['used'])} used)"
+             f"{' · sample ' + e(f['assigned_sample']) if f.get('assigned_sample') else ''} · SHA-256 <code>{e(f['sha256'])}</code></li>"
+             for f in r['input'].get('files', []))}</ul>
 <h2>DNA simulation results</h2>{sim_html}
 <h2>Recovery results</h2>
 <p>Decoders requested: {e(', '.join(rec['decoders_requested']))} · manifest recovered from DNA:
@@ -431,6 +560,8 @@ _slots = threading.BoundedSemaphore(1)
 
 
 def sessions_dir() -> Path:
+    from . import store
+
     return store.JOBS_DIR / "_decoder_sessions"
 
 
@@ -485,7 +616,7 @@ def start(req: DecodeRequest, *, job_id: str | None = None, background: bool = T
     d = session_dir(sid)
     d.mkdir(parents=True)
     _save(sid, {
-        "id": sid, "created": store.now(), "status": "queued", "mode": req.mode, "job_id": job_id,
+        "id": sid, "created": _now(), "status": "queued", "mode": req.mode, "job_id": job_id,
         "archive_id": req.expected_archive_id, "simulation_id": (req.simulation or {}).get("simulation_id"),
         "fasta_name": req.fasta_name, "decoders": req.decoders, "steps": [], "verdict": None,
         "error": None, "files": [],
@@ -564,8 +695,9 @@ def summarize(report: dict) -> dict:
                           "manifest_recovered": v.get("manifest", {}).get("recovered")})
                      if v.get("available") else {"available": False, "reason": v.get("reason")}
                      for d, v in report["recovery"]["decoders"].items()},
-        "input": report["input"],
+        "input": {k: v for k, v in report["input"].items() if k != "files"},
         "simulation_id": (report.get("simulation") or {}).get("simulation_id"),
+        "evidence": report.get("evidence"),
     }
 
 
