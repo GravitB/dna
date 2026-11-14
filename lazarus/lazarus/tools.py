@@ -113,7 +113,7 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
     (the largest one) to run codec experiments on. tier_notes: why other files stay off DNA."""
     d = store.job_dir(job_id)
     uploads = d / "uploads"
-    pools, sealed = {}, {}
+    sealed, stream = {}, b""
     for name in file_names:
         src = uploads / Path(name).name
         if not src.exists():
@@ -123,17 +123,28 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
         key_id = f"kms-{job_id}-{len(sealed):02d}"
         (d / "kms" / f"{key_id}.key").write_bytes(key)
         nonce, ct = crypto.seal(data, key)
-        ids = []
-        for part in crypto.split_pools(ct):
-            pid = f"pool-{len(pools):04d}"
-            (d / "staging" / f"{pid}.bin").write_bytes(part)
-            pools[pid] = {"file": src.name, "bytes": len(part)}
-            ids.append(pid)
         sealed[src.name] = {"key_id": key_id, "nonce": nonce.hex(), "sha256": crypto.sha256(data),
-                            "bytes": len(data), "cipher_bytes": len(ct), "pools": ids}
+                            "bytes": len(data), "cipher_bytes": len(ct), "offset": len(stream)}
+        stream += ct
+    # One archive stream split into balanced pools: no tiny pools (small Fountain codes have a
+    # much larger recovery variance than large ones).
+    n_pools = max(1, -(-len(stream) // crypto.POOL_BYTES))
+    size = -(-len(stream) // n_pools)
+    pools = {}
+    for i in range(n_pools):
+        part = stream[i * size:(i + 1) * size]
+        pid = f"pool-{i:04d}"
+        (d / "staging" / f"{pid}.bin").write_bytes(part)
+        pools[pid] = {"offset": i * size, "bytes": len(part)}
+    for f in sealed.values():
+        a, b = f["offset"], f["offset"] + f["cipher_bytes"]
+        f["pools"] = [p for p, v in pools.items() if v["offset"] < b and v["offset"] + v["bytes"] > a]
+    for p, v in pools.items():
+        v["files"] = [n for n, f in sealed.items() if p in f["pools"]]
     ref = max(pools, key=lambda p: pools[p]["bytes"]) if pools else None
     store.update(job_id, lambda j: j.update(pools=pools, sealed=sealed, tier_notes=tier_notes, status="prepared"))
     return {"pools": [{"pool_id": k, **v} for k, v in pools.items()], "reference_pool": ref,
+            "archive_bytes": len(stream),
             "files": {k: {"bytes": v["bytes"], "cipher_bytes": v["cipher_bytes"], "pools": v["pools"]} for k, v in sealed.items()}}
 
 
@@ -155,7 +166,11 @@ def _experiment(job_id, pool_id, redundancy, strand_length, coverage, decoder, t
                 channel="a", lost_vaults=0, n_vaults=1, years_factor=1.0):
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     prof = _profile(job_id, coverage, years_factor)
-    r = dna.run_trials(_pool_bytes(job_id, pool_id), s, prof, _trials(trials), decoder,
+    if pool_id == "all":
+        data = [_pool_bytes(job_id, p) for p in store.load(job_id)["pools"]]
+    else:
+        data = _pool_bytes(job_id, pool_id)
+    r = dna.run_trials(data, s, prof, _trials(trials), decoder,
                        channel=channel, lost_vaults=lost_vaults, n_vaults=n_vaults)
     r["settings"] = {"redundancy": redundancy, "strand_length": strand_length, "coverage": prof.coverage_mean,
                      "homopolymer_rule": homopolymer_rule, "gc_rule": gc_rule}
@@ -166,7 +181,7 @@ def _experiment(job_id, pool_id, redundancy, strand_length, coverage, decoder, t
 def run_codec_experiment(job_id: str, pool_id: str, redundancy: float, coverage: float, strand_length: int = 110,
                          decoder: str = "baseline", trials: int = 8, homopolymer_rule: bool = True,
                          gc_rule: bool = True) -> dict:
-    """Encode the pool with Erbgut's Fountain encoder, then run `trials` simulated sequencing passes and
+    """pool_id: one pool, or 'all' for the whole archive. Encode with Erbgut's Fountain encoder, then run `trials` simulated sequencing passes and
     decode each one. Returns recovery_rate (fraction of exact file recoveries), strand accuracy,
     bits per base and modeled costs. decoder: 'baseline' (majority vote, fast) or 'polish' (CNN)."""
     r = _experiment(job_id, pool_id, redundancy, strand_length, coverage, decoder, trials, homopolymer_rule, gc_rule)
@@ -196,7 +211,8 @@ def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], covera
 def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, scenario: str,
                 n_vaults: int = 3, strand_length: int = 110, decoder: str = "polish", trials: int = 6,
                 target: float = 1.0) -> dict:
-    """Red-team a design under a condition it was NOT tuned on. scenario:
+    """Red-team a design under a condition it was NOT tuned on. pool_id='all' (recommended) attacks the
+    whole archive: a trial only passes if every pool is recovered. scenario:
     'simulator_b' (structurally different sequencing channel), 'decay_x2' (twice the storage time),
     'low_coverage' (only 60% of the planned reads), 'vault_loss' (one of n_vaults sites destroyed).
     passed = recovery_rate >= target."""
@@ -213,7 +229,7 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
     else:
         return {"error": "scenario must be simulator_b, decay_x2, low_coverage or vault_loss"}
     r = _experiment(job_id, pool_id, redundancy, strand_length, cov, decoder, trials, True, True, **kw)
-    r.update(scenario=scenario, n_vaults=n_vaults, target=target, passed=r["recovery_rate"] >= target)
+    r.update(scenario=scenario, n_vaults=n_vaults, target=target, passed=r["recovery_rate"] >= target, pool_id=pool_id)
     store.emit(job_id, "stress_result", "adversary", r)
     store.update(job_id, lambda j: j["stress"].append(r))
     return r
@@ -252,13 +268,15 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
     for pid in job["pools"]:
         enc = dna.encode_bytes(_pool_bytes(job_id, pid), s)
         pools_out[pid] = enc.strands
-        man_pools[pid] = dna.meta_to_dict(enc.meta)
-    files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools")} for name, v in job["sealed"].items()}
+        man_pools[pid] = {**dna.meta_to_dict(enc.meta), "offset": job["pools"][pid]["offset"]}
+    files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools", "offset", "cipher_bytes")}
+             for name, v in job["sealed"].items()}
     man = {"format": "lazarus-manifest-v1", "company": job["company"], "created": store.now(),
            "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
                        "planned_coverage": coverage, "recommended_decoder": decoder},
            "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
            "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in customer KMS by key_id",
+           "stream": "pools concatenated in pool-id order form one stream; each file is stream[offset:offset+cipher_bytes]",
            "pools": man_pools, "files": files}
     man_strands = manifest.encode_manifest(man)
     written = vaults.write_vaults(store.job_dir(job_id), n_vaults, pools_out, man_strands)
@@ -368,7 +386,8 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
                 pool_bytes[pid] = data
         pool_results[pid] = res
 
-    # 3. files: reassemble, decrypt with KMS key, verify hash
+    # 3. files: cut each file's ciphertext out of the archive stream, decrypt with KMS key, verify hash
+    offsets = {pid: int(m.get("offset", 0)) for pid, m in man["pools"].items()}
     files_out = []
     restored = d / "restored"
     restored.mkdir(exist_ok=True)
@@ -378,8 +397,11 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
                  "polish_would_recover": all(pool_results[p]["polish_ok"] for p in f["pools"])}
         if all(p in pool_bytes for p in f["pools"]):
             try:
+                start = offsets[f["pools"][0]]
+                span = b"".join(pool_bytes[p] for p in f["pools"])
+                ct = span[f["offset"] - start: f["offset"] - start + f["cipher_bytes"]]
                 key = (d / "kms" / f"{f['key_id']}.key").read_bytes()
-                plain = crypto.unseal(bytes.fromhex(f["nonce"]), b"".join(pool_bytes[p] for p in f["pools"]), key)
+                plain = crypto.unseal(bytes.fromhex(f["nonce"]), ct, key)
                 entry["recovered"] = True
                 entry["sha256"] = crypto.sha256(plain)
                 entry["sha256_match"] = entry["sha256"] == f["sha256"]
@@ -392,6 +414,8 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
     result = {"vaults_available": available, "n_vaults": man["n_vaults"], "coverage": cov, "attempt": attempt,
               "files": files_out, "pools": pool_results, "all_verified": all(f["sha256_match"] for f in files_out),
               "seconds": round(time.time() - t0, 2)}
+    for v in available:
+        store.emit(job_id, "vault_event", "recovery-engineer", {"vault_id": v, "status": "healthy"})
     store.emit(job_id, "drill_result", "recovery-engineer", result)
     store.update(job_id, lambda j: (j["drills"].append(result),
                                     j.update(status="recovered" if result["all_verified"] else j["status"])))

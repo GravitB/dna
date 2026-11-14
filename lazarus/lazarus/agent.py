@@ -57,14 +57,15 @@ Erbgut codec through tools. Method:
 1. build_profile to see the channel (error rates, strand loss after the storage period).
 2. run_codec_sweep with decoder='baseline', trials 4-6, redundancies like [0.3, 0.6, 1.0] and 1-3
    coverages around the planned one, to map the recovery/cost frontier.
-3. Confirm the cheapest point that meets the target with run_codec_experiment, decoder='polish', trials 6-8.
+3. Confirm the cheapest point that meets the target on the WHOLE archive with run_codec_experiment,
+   pool_id='all', decoder='polish', trials 6-8.
 4. estimate_cost for the whole archive at that point.
 Return: the chosen redundancy and coverage, recovery rates with trial counts, modeled costs, and the
 cheaper points that failed (so the supervisor sees the trade-off). Never invent numbers."""
 
 ADVERSARY_PROMPT = """You are the Adversary. Your job is to BREAK the proposed DNA archive design before
-reality does. Run stress_test for each scenario: vault_loss, simulator_b, decay_x2, low_coverage
-(trials 4-6, decoder 'polish', target as given). Report each result with recovery rate and trial count,
+reality does. Run stress_test with pool_id='all' (the whole archive) for each scenario: vault_loss, simulator_b,
+decay_x2, low_coverage (trials 4-6, decoder 'polish', target as given). Report each result with recovery rate and trial count,
 and say plainly which scenarios fail. Do not soften failures. Suggest the smallest change you would test
 next, but do not claim it works unless you tested it."""
 

@@ -21,7 +21,7 @@ import zstandard
 from . import dna
 
 MAGIC = b"LZM1"
-MANIFEST_BYTES = 8192
+MANIFEST_BYTES = 4096
 BOOTSTRAP = dna.EncoderSettings(strand_length=110, seed_bases=16, redundancy=1.0)
 
 

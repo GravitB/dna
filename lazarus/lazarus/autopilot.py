@@ -21,7 +21,7 @@ def run(job_id: str, approve=lambda tool, args: True, trials: int = 4) -> dict:
     ok = [p for p in sweep["points"] if p["recovery_rate"] >= 1.0]
     red = min(p["redundancy"] for p in ok) if ok else 1.0
     while True:
-        st = tools.stress_test(job_id=job_id, pool_id=pool, redundancy=red, coverage=cov, scenario="vault_loss",
+        st = tools.stress_test(job_id=job_id, pool_id="all", redundancy=red, coverage=cov, scenario="vault_loss",
                                n_vaults=n_v, trials=trials)
         if st.get("passed") or red >= 1.6:
             break

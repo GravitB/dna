@@ -86,7 +86,10 @@ _polish_lock = threading.Lock()
 def _polish():
     from dnacodec.model.polish import PolishDecoder
 
-    device = os.environ.get("LAZARUS_DEVICE", "cpu")
+    import torch
+
+    device = os.environ.get("LAZARUS_DEVICE") or (
+        "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     return PolishDecoder(POLISH_CHECKPOINT, device=device, workers=1)
 
 
@@ -133,7 +136,7 @@ def sequence(strands: Sequence[str], profile: SituationProfile, seed: int, chann
 
 
 def run_trials(
-    data: bytes,
+    data: bytes | Sequence[bytes],
     settings: EncoderSettings,
     profile: SituationProfile,
     trials: int,
@@ -146,31 +149,44 @@ def run_trials(
 ) -> dict:
     """Encode once, then run `trials` independent sequencing passes and count exact recoveries.
 
-    Uses train seeds only (Erbgut seed discipline). lost_vaults removes every strand stored in
-    the first `lost_vaults` of `n_vaults` vaults before sequencing.
+    data may be one pool or a list of pools (a whole archive): a trial only counts as recovered
+    when every pool comes back byte-exact. Uses train seeds only (Erbgut seed discipline).
+    lost_vaults removes every strand stored in the first `lost_vaults` of `n_vaults` vaults.
     """
     t0 = time.time()
-    enc = encode(data, settings)
-    n = len(enc.strands)
-    lost = {v for v in range(min(lost_vaults, n_vaults))}
-    strand_acc = []
-    ok = 0
+    datas = [data] if isinstance(data, (bytes, bytearray)) else list(data)
+    encs = [encode(d, settings) for d in datas]
+    lost = set(range(min(lost_vaults, n_vaults)))
+    strand_acc, ok = [], 0
     for t in range(trials):
-        clusters = sequence(enc.strands, profile, seed_base + t, channel)
-        if lost:
-            clusters = [[] if vault_of(i, n_vaults) in lost else c for i, c in enumerate(clusters)]
-        decoded = decode_clusters(clusters, settings.strand_length, decoder)
-        strand_acc.append(float(np.mean([d == s for d, s in zip(decoded, enc.strands)])))
-        ok += recover(decoded, enc.meta) == data
-    bpb = payload_bits_per_base(enc.meta, n)
+        all_ok, hits, total = True, 0, 0
+        for j, (d, enc) in enumerate(zip(datas, encs)):
+            clusters = sequence(enc.strands, profile, seed_base + 97 * j + t, channel)
+            if lost:
+                clusters = [[] if vault_of(i, n_vaults) in lost else c for i, c in enumerate(clusters)]
+            decoded = decode_clusters(clusters, settings.strand_length, decoder)
+            hits += sum(a == b for a, b in zip(decoded, enc.strands))
+            total += len(enc.strands)
+            all_ok = all_ok and recover(decoded, enc.meta) == d
+        strand_acc.append(hits / max(1, total))
+        ok += all_ok
+    n = sum(len(e.strands) for e in encs)
+    c = [costs(e.meta, len(e.strands), profile) for e in encs]
+    bases = sum(x["bases"] for x in c)
+    payload_bits = sum(payload_bits_per_base(e.meta, len(e.strands)) * x["bases"] for e, x in zip(encs, c))
     return {
         "recovery_rate": ok / trials if trials else 0.0,
         "n_trials": trials,
         "n_recovered": ok,
+        "n_pools": len(encs),
         "strand_accuracy": round(float(np.mean(strand_acc)), 4) if strand_acc else None,
         "n_strands": n,
-        "bits_per_base": round(bpb, 4),
-        **costs(enc.meta, n, profile),
+        "bits_per_base": round(payload_bits / bases, 4) if bases else 0.0,
+        "bases": bases,
+        "write_usd": round(sum(x["write_usd"] for x in c), 4),
+        "read_usd": round(sum(x["read_usd"] for x in c), 4),
+        "write_usd_per_mb": c[0]["write_usd_per_mb"],
+        "read_usd_per_mb": c[0]["read_usd_per_mb"],
         "decoder": decoder,
         "seconds": round(time.time() - t0, 2),
     }

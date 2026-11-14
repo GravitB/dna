@@ -95,6 +95,11 @@ def get_job(job_id: str):
     return j
 
 
+@app.get("/api/jobs/{job_id}/eventlog")
+def eventlog(job_id: str):
+    return store.events_since(job_id, 0, 0)
+
+
 @app.get("/api/jobs/{job_id}/events")
 async def events(job_id: str, since: int = 0):
     store.job_dir(job_id)
@@ -155,7 +160,7 @@ if WEB_DIST.exists():
         f = WEB_DIST / path
         if path and f.is_file() and WEB_DIST in f.resolve().parents:
             return FileResponse(f)
-        return FileResponse(WEB_DIST / "index.html")
+        return FileResponse(WEB_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 else:
     @app.get("/")
     def root():

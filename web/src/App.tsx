@@ -25,7 +25,7 @@ export default function App() {
   const hash = useHash();
   const [health, setHealth] = useState<any>(null);
   useEffect(() => { api("/health").then(setHealth).catch(() => setHealth(null)); }, []);
-  const jobId = hash.startsWith("#/job/") ? hash.slice(6) : null;
+  const jobId = hash.startsWith("#/job/") ? hash.slice(6).split("?")[0] : null;
   return (
     <>
       <div className="top">
@@ -147,12 +147,19 @@ function useEvents(id: string) {
   const [evs, setEvs] = useState<Ev[]>([]);
   useEffect(() => {
     setEvs([]);
-    const es = new EventSource(`/api/jobs/${id}/events`);
-    es.onmessage = (m) => {
-      const ev = JSON.parse(m.data);
-      setEvs((a) => (a.length && a[a.length - 1].seq >= ev.seq ? a : [...a, ev]));
-    };
-    return () => es.close();
+    let es: EventSource | null = null;
+    let closed = false;
+    api(`/jobs/${id}/eventlog`).then((log: Ev[]) => {
+      if (closed) return;
+      setEvs(log);
+      if (location.hash.endsWith("?static")) return; // snapshot view, no live stream
+      es = new EventSource(`/api/jobs/${id}/events?since=${log.length}`);
+      es.onmessage = (m) => {
+        const ev = JSON.parse(m.data);
+        setEvs((a) => (a.length && a[a.length - 1].seq >= ev.seq ? a : [...a, ev]));
+      };
+    });
+    return () => { closed = true; es?.close(); };
   }, [id]);
   return evs;
 }
@@ -241,7 +248,7 @@ function JobView({ id }: { id: string }) {
               )}
             </div>
           </div>
-          <div className="card">
+          <div className="card" style={{ marginTop: 16 }}>
             <h2>Recovery drill · originals deleted, only DNA + bootstrap spec + KMS keys</h2>
             <Drills drills={drills} id={id} />
           </div>
@@ -299,7 +306,7 @@ function ExperimentChart({ rows, target }: { rows: any[]; target: number }) {
   return (
     <>
       <ResponsiveContainer width="100%" height={260}>
-        <ScatterChart margin={{ top: 10, right: 16, bottom: 10, left: -10 }}>
+        <ScatterChart margin={{ top: 10, right: 16, bottom: 18, left: -10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
           <XAxis type="number" dataKey="x" name="redundancy" domain={[0, "auto"]} tick={{ fill: "var(--muted)", fontSize: 12 }}
             label={{ value: "redundancy (extra strands)", position: "insideBottom", offset: -4, fill: "var(--muted)", fontSize: 12 }} />
@@ -307,8 +314,8 @@ function ExperimentChart({ rows, target }: { rows: any[]; target: number }) {
           <ZAxis type="number" dataKey="n" range={[60, 160]} name="trials" />
           <Tooltip cursor={{ strokeDasharray: "3 3" }} contentStyle={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 8 }}
             formatter={(v: any, n: any) => [v, n]} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {Object.entries(groups).map(([k, d], i) => <Scatter key={k} name={k} data={d} fill={COLORS[i % COLORS.length]} />)}
+          <Legend verticalAlign="top" wrapperStyle={{ fontSize: 12, paddingBottom: 6 }} />
+          {Object.entries(groups).map(([k, d], i) => <Scatter key={k} name={k} data={d} fill={COLORS[i % COLORS.length]} isAnimationActive={false} />)}
         </ScatterChart>
       </ResponsiveContainer>
       <div className="small muted">
