@@ -1413,7 +1413,7 @@ body {
   #root .simulation { display: none; }
   #root .hero .actions { flex-direction: column; align-items: stretch; }
   #root .hero .actions .button { white-space: nowrap; }
-  #root .dna-field { opacity: 0.55; }
+  #root .dna-field { opacity: 0.55; inset: -24px 0 -10px; }
   #root .hero-card { padding: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
