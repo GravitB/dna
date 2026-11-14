@@ -17,7 +17,7 @@ Read [docs/LEARNED_ARCHIVES.md](docs/LEARNED_ARCHIVES.md) for architecture, limi
 
 ## Verified on this machine
 
-- 64 backend tests; 21 frontend tests; production frontend build.
+- 66 backend tests; 21 frontend tests; production frontend build.
 - Real fresh training: 512 controlled training sequences, 128 independent evaluation sequences, eight label repetitions, 12 completed epochs. This small model evaluation does not establish a learned encoding improvement.
 - Live Gemini/deepagents notebook-image archive: `20261114-021339-c010c3`. Actual delegation to researcher, codec engineer, adversary, recovery engineer and compliance. Both standard and learned designs failed the location-loss selection test at 0.8 redundancy; both passed at 1.2. The requested learned design was selected on training evidence. This tie is not an improvement claim.
 - All five final held-out scenarios passed 3/3 (exploratory). The browser displayed the matching proposal and both approval steps, followed by the recovered image and SHA-256 verification.
@@ -26,6 +26,10 @@ Read [docs/LEARNED_ARCHIVES.md](docs/LEARNED_ARCHIVES.md) for architecture, limi
 - Working uploads/staging were absent when the restored file was checked byte-for-byte.
 - Preserve the honest failed tiny-image run `20261114-021103-668c39`: it failed final held-out validation and was not ordered. Earlier debugging runs are not successful demonstrations.
 - Supabase tests use the real HTTP adapter against a private-storage protocol double. A learned candidate survives an empty-machine recovery and one lost location without loading its risk model.
+
+## Automatic reading-plan adjustment
+
+The selection search now tries baseline, 1.5× and 2× reads (capped at 100), each with the four bounded redundancy levels. Selection uses at least six trials and a tougher 50% low-read stress condition before final validation at 60%. The baseline policy is preserved; the chosen read count is immutable candidate metadata and drives pricing, approval, manifest and recovery. Higher-read learned candidates require a compatible registered model; standard-rule alternatives are labeled explicitly. The UI shows each plan's reads and modeled recovery cost. Existing failed final results stay unchanged; create a revised archive to use this improved search.
 
 ## Remaining external verification
 

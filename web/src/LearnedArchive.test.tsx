@@ -12,7 +12,7 @@ it('shows measured customer comparison and trial limits', () => {
   expect(screen.getByText('One location lost: 2/3')).toBeTruthy();
   expect(screen.getByText('One location lost: 3/3')).toBeTruthy();
   expect(screen.getByText(/A tie does not demonstrate an improvement/)).toBeTruthy();
-  expect(screen.getByText(/3 trials per scenario/)).toBeTruthy();
+  expect(screen.getByText(/3 final trials per scenario/)).toBeTruthy();
 });
 it('provides cancellation and explains interrupted learning', () => {
   const action=vi.fn();

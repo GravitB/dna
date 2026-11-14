@@ -1156,6 +1156,7 @@ function Approval({
               <dt>Storage locations</dt>
               <dd>{String(shownArgs.n_vaults || 3)}</dd>
             </div>
+            <div><dt>Planned reads per DNA piece</dt><dd>{String(shownArgs.coverage ?? "Not recorded")}</dd></div>
           </dl>
           {p.args.candidate_id && <p>Exact tested candidate: <code className="candidate-id">{String(p.args.candidate_id)}</code>. These measurements use a small exploratory trial count.</p>}
           <table>

@@ -104,32 +104,45 @@ def compare(job_id, redundancy=0.8, trials=3):
         row = model_registry.find(job['policy'])
         if row is None:
             return {'error': 'No evaluated model matches this reader, aging period and decoder. Choose fresh learning or standard encoding.'}
-    model = model_registry.load(row, job['policy']) if row else None
     screened, winner = [], None
-    # Revise using train seeds only. Each learned/standard pair has matched conditions.
-    for red in (r for r in (0.8, 1.2, 1.6, 2.0) if r >= redundancy):
-        settings = dna.EncoderSettings(redundancy=red)
-        ids = [candidates.create(job_id, settings)['id']]
-        if row:
-            ids.append(candidates.create(job_id, settings, model, row)['id'])
-        pair = []
-        for cid in ids:
-            kind = 'learned' if candidates.load(job_id, cid)['model'] else 'standard'
-            update(job_id, message=f'Testing frozen {kind} customer DNA with {red:g} redundancy')
-            costs = candidates.cost(job_id, cid)
-            report = candidates.validate(job_id, cid, trials=trials, heldout=False) if costs['within_budget'] else None
-            pair.append({'candidate_id': cid, 'kind': kind, 'redundancy': red, 'cost': costs, 'screening': report})
-        screened.extend(pair)
-        eligible = [r for r in pair if r['screening'] and r['screening']['passed']]
-        if eligible:
-            winner = min(eligible, key=lambda r: (r['cost']['bases'], r['kind'] != 'learned'))
+    base_reads = float(job['policy']['coverage'])
+    read_options = sorted({base_reads, min(100., base_reads * 1.5), min(100., base_reads * 2)})
+    screening_trials = max(6, trials * 2)
+    # All revisions are selected on train seeds, before any held-out evaluation.
+    for reads in read_options:
+        read_policy = {**job['policy'], 'coverage': reads}
+        compatible = row if reads == base_reads else model_registry.find(read_policy) if row else None
+        model = model_registry.load(compatible, read_policy) if compatible else None
+        if row and compatible is None:
+            store.emit(job_id, 'message', 'codec-engineer', {'text': f'No compatible learned model exists at {reads:g} reads. Testing standard rules at this read count; the original learned model is not treated as compatible.'})
+        for red in (r for r in (0.8, 1.2, 1.6, 2.0) if r >= redundancy):
+            settings = dna.EncoderSettings(redundancy=red)
+            ids = [candidates.create(job_id, settings, coverage=reads)['id']]
+            if compatible:
+                ids.append(candidates.create(job_id, settings, model, compatible, coverage=reads)['id'])
+            pair = []
+            for cid in ids:
+                kind = 'learned' if candidates.load(job_id, cid)['model'] else 'standard'
+                update(job_id, message=f'Testing {kind} DNA with {reads:g} reads and {red:g} extra recovery data')
+                costs = candidates.cost(job_id, cid)
+                report = candidates.validate(job_id, cid, trials=screening_trials, heldout=False, safety_margin=True) if costs['within_budget'] else None
+                pair.append({'candidate_id': cid, 'kind': kind, 'redundancy': red, 'coverage': reads,
+                             'cost': costs, 'screening': report})
+            screened.extend(pair)
+            eligible = [r for r in pair if r['screening'] and r['screening']['passed']]
+            if eligible:
+                winner = min(eligible, key=lambda r: (r['cost']['bases'], r['kind'] != 'learned'))
+                break
+            store.emit(job_id, 'message', 'codec-engineer', {'text': f'Design at {reads:g} reads and {red:g} recovery data failed selection or exceeded budget. Adjusting the design automatically; final seeds remain unused.'})
+            if not any(r['cost']['within_budget'] for r in pair):
+                break
+        if winner:
             break
-        if not any(r['cost']['within_budget'] for r in pair):
-            break
-        store.emit(job_id, 'message', 'codec-engineer', {'text': f'The {red:g} redundancy designs did not pass selection tests. Testing the next bounded design; final held-out seeds remain unused.'})
+        if reads != read_options[-1]:
+            update(job_id, message='The current reading plan did not pass with a safety margin. Automatically increasing reads and testing revised designs.')
     result = {'candidates': screened, 'selected_id': winner['candidate_id'] if winner else None,
               'conditions': 'Matched ciphertext, redundancy, rules, decoder, channel and trial seeds; exploratory.',
-              'trials': trials, 'selection_partition': 'train', 'model': model_registry.summary(row)}
+              'trials': trials, 'screening_trials': screening_trials, 'read_options': read_options, 'safety_margin': True, 'selection_partition': 'train', 'model': model_registry.summary(row)}
     store.update(job_id, lambda j: j.update(candidate_comparison=result))
     store.emit(job_id, 'candidate_comparison', 'codec-engineer', result)
     return result
@@ -138,7 +151,7 @@ def compare(job_id, redundancy=0.8, trials=3):
 def finalize(job_id):
     result = store.load(job_id).get('candidate_comparison')
     if not result or not result.get('selected_id'):
-        return {'error': 'No within-budget candidate passed selection trials. Start a revised archive with more reads or redundancy.'}
+        return {'error': 'Automatic selection exhausted the allowed reads and recovery-data settings without a passing design within budget. Create a revised archive with a larger modeled budget or different reader settings.'}
     cid = result['selected_id']
     report = candidates.validate(job_id, cid, trials=result['trials'])
     if not report['passed']:

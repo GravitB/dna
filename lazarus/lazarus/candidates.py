@@ -12,13 +12,17 @@ def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def create(job_id, settings, scorer=None, model_ref=None):
+def create(job_id, settings, scorer=None, model_ref=None, *, coverage=None):
     """Encode selected encrypted pools once and persist an immutable candidate."""
     if scorer is not None and not model_ref:
         raise ValueError("Learned candidates require model provenance")
     job = store.load(job_id)
     if job.get("order") or not job["sealed"]:
         raise ValueError("Candidates require a prepared, uncommitted archive")
+    if coverage is not None:
+        import math
+        if not math.isfinite(coverage) or not job['policy']['coverage'] <= coverage <= 100:
+            raise ValueError('Candidate reads must be between the requested baseline and 100')
     pools = {}
     for pid in sorted(job["pools"]):
         data = (store.job_dir(job_id) / "staging" / f"{pid}.bin").read_bytes()
@@ -32,6 +36,8 @@ def create(job_id, settings, scorer=None, model_ref=None):
             "pool_offsets": {pid: p.get("offset") for pid, p in sorted(job["pools"].items())},
             "policy": job["policy"], "pools": pools,
             "decoder_sha256": hashlib.sha256(dna.POLISH_CHECKPOINT.read_bytes()).hexdigest()}
+    if coverage is not None:
+        body['planned_coverage'] = float(coverage)
     data = _canonical(body)
     candidate_id = hashlib.sha256(data).hexdigest()
     path = f"candidates/{candidate_id}.json"
@@ -61,11 +67,13 @@ def load(job_id, candidate_id):
     return candidate
 
 
-def validate(job_id, candidate_id, trials=4, *, heldout=True):
+def validate(job_id, candidate_id, trials=4, *, heldout=True, safety_margin=False):
     """Exercise frozen emitted strands; hold-out seeds are reserved for this final check."""
     from dnacodec.seeds import heldout_seeds, train_seed
     from dnacodec import simulator, simulator_b
     from dataclasses import replace
+    if heldout and safety_margin:
+        raise ValueError('Safety margin is for selection only')
     candidate = load(job_id, candidate_id)
     policy = candidate['policy']
     existing = store.load(job_id)['candidates'][candidate_id].get('validation')
@@ -81,7 +89,7 @@ def validate(job_id, candidate_id, trials=4, *, heldout=True):
                 raise ValueError('Final validation is already claimed; do not re-roll evidence')
             j['candidates'][candidate_id]['validation'] = {'state': 'running', 'candidate_id': candidate_id, 'started': store.now()}
         store.update(job_id, claim)
-    profile = dna.make_profile(policy['tech'], policy['retention_years'], policy['coverage'])
+    profile = dna.make_profile(policy['tech'], policy['retention_years'], candidate.get('planned_coverage', policy['coverage']))
     seeds = list(heldout_seeds(trials)) if heldout else [train_seed(45000 + i) for i in range(trials)]
     from . import manifest
     bootstrap_manifest = archive_manifest(store.load(job_id), candidate_id, candidate)
@@ -89,7 +97,7 @@ def validate(job_id, candidate_id, trials=4, *, heldout=True):
     rows = []
     for scenario in ('normal', 'simulator_b', 'low_coverage', 'decay_x2', 'vault_loss'):
         channel = simulator_b if scenario == 'simulator_b' else simulator
-        p = replace(profile, coverage_mean=profile.coverage_mean * 0.6) if scenario == 'low_coverage' else profile
+        p = replace(profile, coverage_mean=profile.coverage_mean * (0.5 if safety_margin else 0.6)) if scenario == 'low_coverage' else profile
         if scenario == 'decay_x2':
             p = replace(p, storage_years=p.storage_years * 2)
         successes = 0
@@ -112,6 +120,7 @@ def validate(job_id, candidate_id, trials=4, *, heldout=True):
         rows.append({'scenario': scenario, 'n_trials': trials, 'n_recovered': successes,
                      'recovery_rate': successes / trials})
     report = {'state': 'completed', 'candidate_id': candidate_id, 'tested_at': store.now(), 'exploratory': trials < 300, 'seed_partition': 'heldout' if heldout else 'train',
+              'safety_margin': safety_margin, 'low_coverage_factor': 0.5 if safety_margin else 0.6,
               'scenarios': rows, 'passed': all(r['recovery_rate'] >= policy['target'] for r in rows)}
     evidence_path = f"candidate-evidence/{candidate_id}/{hashlib.sha256(_canonical(report)).hexdigest()}.json"
     artifacts.publish(job_id, evidence_path, _canonical(report))
@@ -125,7 +134,7 @@ def proposal_args(job_id, candidate_id):
     s, p = c['settings'], c['policy']
     return dict(candidate_id=candidate_id, redundancy=s['redundancy'], strand_length=s['strand_length'],
                 homopolymer_rule=s['max_homopolymer'] is not None, gc_rule=s['gc_min'] is not None and s['gc_max'] is not None,
-                coverage=p['coverage'], n_vaults=p['n_vaults'], decoder='polish')
+                coverage=c.get('planned_coverage', p['coverage']), n_vaults=p['n_vaults'], decoder='polish')
 
 
 def archive_manifest(job, candidate_id, c):
@@ -135,7 +144,7 @@ def archive_manifest(job, candidate_id, c):
     return {'format': 'lazarus-manifest-v1', 'company': job['company'], 'created': job['created'],
             'candidate_id': candidate_id, 'model': model_ref,
             'channel': {'tech': c['policy']['tech'], 'retention_years': c['policy']['retention_years'],
-                        'planned_coverage': c['policy']['coverage'], 'recommended_decoder': 'polish'},
+                        'planned_coverage': c.get('planned_coverage', c['policy']['coverage']), 'recommended_decoder': 'polish'},
             'n_vaults': c['policy']['n_vaults'], 'crypto': 'zstd then AES-256-GCM, aad=lazarus-v1',
             'pools': {pid: {**p['meta'], 'offset': job['pools'][pid]['offset']} for pid, p in c['pools'].items()},
             'files': files}
@@ -149,10 +158,11 @@ def cost(job_id, candidate_id):
     bootstrap = manifest.encode_manifest(archive_manifest(job, candidate_id, c))
     bases = sum(len(s) for pool in c['pools'].values() for s in pool['strands']) + p['n_vaults'] * sum(map(len, bootstrap))
     count = sum(len(pool['strands']) for pool in c['pools'].values()) + p['n_vaults'] * len(bootstrap)
-    profile = dna.make_profile(p['tech'], p['retention_years'], p['coverage'])
+    coverage = c.get('planned_coverage', p['coverage'])
+    profile = dna.make_profile(p['tech'], p['retention_years'], coverage)
     write = bases * profile.synthesis_usd_per_base
     return {'candidate_id': candidate_id, 'bases': bases, 'write_usd': round(write, 2),
-            'read_usd': round(count * p['coverage'] * profile.sequencing_usd_per_read, 2),
+            'read_usd': round(count * coverage * profile.sequencing_usd_per_read, 2),
             'budget_usd': p['budget_usd'], 'within_budget': write <= p['budget_usd'], 'prices': 'modeled placeholders'}
 
 

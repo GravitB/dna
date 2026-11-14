@@ -237,3 +237,41 @@ def test_server_restart_marks_learning_interrupted(prepared, monkeypatch):
     store.update(jid,lambda j:j.update(encoding_mode='fresh'))
     monkeypatch.setattr(learned,'train',lambda *a:pytest.fail('interrupted training needs an explicit new archive'))
     assert 'error' in tools.prepare_learned_model(job_id=jid)
+
+
+def test_auto_search_increases_reads_before_using_final_seeds(prepared, monkeypatch):
+    jid,_=prepared
+    seen=[]
+    real_validate=candidates.validate
+    def screening(jid,cid,trials,**kw):
+        assert not kw['heldout'] and kw['safety_margin']
+        assert trials >= 6
+        c=candidates.load(jid,cid)
+        reads=c['planned_coverage']
+        seen.append(reads)
+        return {'passed':reads>16, 'seed_partition':'train','scenarios':[]}
+    monkeypatch.setattr(candidates,'validate',screening)
+    result=learned.compare(jid)
+    assert 16 in seen and 24 in seen
+    args=candidates.proposal_args(jid,result['selected_id'])
+    assert args['coverage']==24
+    assert store.load(jid)['policy']['coverage']==16
+    frozen=candidates.load(jid,result['selected_id'])
+    assert candidates.archive_manifest(store.load(jid),result['selected_id'],frozen)['channel']['planned_coverage']==24
+    assert result['screening_trials']==6
+    # Existing final-test calls still reserve held-out seeds for one independent evaluation.
+    monkeypatch.setattr(candidates,'validate',real_validate)
+
+
+def test_adjusted_reads_are_bound_to_approval_and_cost(prepared, exact_channel):
+    jid,_=prepared
+    s=dna.EncoderSettings(redundancy=2.)
+    cid=candidates.create(jid,s,coverage=24)['id']
+    base=candidates.create(jid,s,coverage=16)['id']
+    assert candidates.cost(jid,cid)['read_usd'] > candidates.cost(jid,base)['read_usd']
+    assert candidates.validate(jid,cid,trials=1)['passed']
+    args=candidates.proposal_args(jid,cid)
+    assert candidates.approval(jid,args)['can_approve']
+    assert not candidates.approval(jid,{**args,'coverage':16})['can_approve']
+    assert tools.place_synthesis_order(job_id=jid,**args)['settings']['coverage']==24
+    assert candidates.load(jid,cid)['policy']==store.load(jid)['policy']
