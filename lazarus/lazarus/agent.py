@@ -18,7 +18,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from . import store, tools
+from . import store, tools, presentation
 
 MODEL = os.environ.get("LAZARUS_MODEL", "anthropic:claude-sonnet-5-5")
 
@@ -32,7 +32,8 @@ sequencing simulator, majority-vote baseline and a CNN decoder trained on real N
 
 Workflow (write it as todos first with write_todos, keep them updated):
 1. inventory_files. Decide the DNA tier: only cold, immutable, long-retention records go to DNA.
-   Files that are clearly edited often (notes, drafts) stay on conventional storage; say why.
+   All uploaded files were explicitly selected by the customer. Include ALL of them in prepare_archive.
+   You may explain suitability concerns, but never silently exclude a selected record.
 2. prepare_archive with the DNA-tier files. Note the reference_pool.
 3. Delegate codec design to the `codec-engineer` subagent. Give it: job_id, reference pool id, policy
    (retention years, tech, planned coverage, budget, target, n_vaults). Ask for the cheapest
@@ -131,7 +132,7 @@ class Run:
         return self
 
     def decide(self, decision: dict) -> bool:
-        if self.pending is None:
+        if self.pending is None or self._decision is not None:
             return False
         self._decision = decision
         self._event.set()
@@ -145,8 +146,7 @@ class Run:
                 summary = tools.estimate_cost.__wrapped__(self.job_id, float(args.get("redundancy", 1.0)),
                                                           float(args.get("coverage", 10)), int(args.get("strand_length", 110)), int(args.get("n_vaults", 3)))
                 job = store.load(self.job_id)
-                summary["stress"] = [{k: s[k] for k in ("scenario", "recovery_rate", "n_trials", "passed")} | {"redundancy": s["settings"]["redundancy"]}
-                                     for s in job["stress"]][-8:]
+                summary = presentation.proposal(job, args, summary)
         except Exception as e:  # noqa: BLE001
             summary = {"error": str(e)}
         self.pending = {"tool": tool, "args": args, "summary": summary}
@@ -243,6 +243,6 @@ RUNS: dict[str, Run] = {}
 
 
 def start(job_id: str, mode: str = "agent") -> Run:
-    r = Run(job_id, mode).start()
+    r = Run(job_id, mode)
     RUNS[job_id] = r
-    return r
+    return r.start()
