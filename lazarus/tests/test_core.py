@@ -58,3 +58,23 @@ def test_order_destroy_and_recover_from_two_of_three_vaults(tmp_path, monkeypatc
     assert r["all_verified"], (r["pools"], r["files"])
     restored = store.job_dir(jid) / "restored" / "ledger_FY2026.csv"
     assert restored.read_bytes() == (SAMPLES / "ledger_FY2026.csv").read_bytes()
+
+
+def test_failed_drill_supersedes_certificate(tmp_path, monkeypatch):
+    jid = _job(tmp_path, monkeypatch)
+    d = store.job_dir(jid)
+    (d / 'certificate.html').write_text('previous success')
+    (d / 'restored' / 'old.pdf').write_bytes(b'old')
+    store.update(jid, lambda j: j.update(status='certified', certificate='certificate.html'))
+    result = tools.recover_archive(job_id=jid)
+    assert not result['all_verified']
+    assert store.load(jid)['status'] == 'recovery_failed'
+    assert len(store.load(jid)['drills']) == 1
+    assert not (d / 'certificate.html').exists()
+    assert not (d / 'restored' / 'old.pdf').exists()
+
+
+def test_primary_requires_order(tmp_path, monkeypatch):
+    jid = _job(tmp_path, monkeypatch)
+    assert 'error' in tools.destroy_primary(job_id=jid)
+    assert any((store.job_dir(jid) / 'uploads').iterdir())

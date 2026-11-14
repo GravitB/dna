@@ -178,7 +178,7 @@ function JobView({ id }: { id: string }) {
   const experiments = evs.filter((e) => e.type === "experiment_result").map((e) => e.data);
   const stress = evs.filter((e) => e.type === "stress_result").map((e) => e.data);
   const drills = evs.filter((e) => e.type === "drill_result").map((e) => e.data);
-  const done = evs.find((e) => e.type === "done");
+  const done = job?.certificate ? [...evs].reverse().find((e) => e.type === "done") : null;
   const vaultStatus: Record<number, string> = {};
   evs.filter((e) => e.type === "vault_event").forEach((e) => { vaultStatus[e.data.vault_id] = e.data.status; });
   (job?.vaults ?? []).forEach((v: any) => { if (v.status === "destroyed") vaultStatus[v.vault_id] = "destroyed"; });
@@ -254,7 +254,7 @@ function JobView({ id }: { id: string }) {
           </div>
         </div>
       </div>
-      {interrupt && <Approval id={id} p={interrupt} />}
+      {interrupt && <Approval key={`${interrupt.tool}:${evs.filter(e => e.type === "interrupt").length}`} id={id} p={interrupt} />}
     </>
   );
 }
@@ -399,15 +399,17 @@ function Drills({ drills, id }: { drills: any[]; id: string }) {
 
 function Approval({ id, p }: { id: string; p: any }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const send = async (decision: string) => {
-    setBusy(true);
-    await api(`/jobs/${id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) }).catch(() => {});
+    setBusy(true); setError("");
+    await api(`/jobs/${id}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }) }).catch((e: Error) => { setError(e.message); setBusy(false); });
   };
   const s = p.summary || {};
   const order = p.tool === "place_synthesis_order";
   return (
     <div className="modal-back">
       <div className="modal">
+        {error && <p role="alert" className="pill bad">{error}</p>}
         <h3>{order ? "Approve DNA synthesis order?" : "Start the disaster drill?"}</h3>
         <div className="muted small">The agent paused and needs a human decision (deepagents human-in-the-loop).</div>
         {order ? (

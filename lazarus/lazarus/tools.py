@@ -236,7 +236,7 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
 
 
 @logged
-def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length: int = 110) -> dict:
+def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length: int = 110, n_vaults: int = 3) -> dict:
     """Modeled total cost to write every pool at this setting and read it back once, against the budget.
     Prices are Erbgut placeholder prices, not vendor quotes."""
     job = store.load(job_id)
@@ -248,6 +248,13 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
         n = int(-(-meta.n_chunks * (1 + redundancy) // 1))
         c = dna.costs(meta, n, prof)
         bases += c["bases"]; write += c["write_usd"]; read += c["read_usd"]
+    # Every site also receives a full bootstrap manifest pool.
+    meta = manifest.bootstrap_meta()
+    n = int(-(-meta.n_chunks * (1 + meta.settings.redundancy) // 1))
+    c = dna.costs(meta, n, prof)
+    bases += n_vaults * c["bases"]
+    write += n_vaults * c["write_usd"]
+    read += n_vaults * c["read_usd"]
     budget = float(job["policy"].get("budget_usd") or 0)
     return {"bases": int(bases), "write_usd": round(write, 2), "read_usd": round(read, 2),
             "budget_usd": budget, "within_budget": budget <= 0 or write <= budget, "prices": "modeled placeholders"}
@@ -263,6 +270,8 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
     n_vaults sites (strand i -> vault i mod n), write vendor-ready order.fasta/order.csv per vault, and
     write the self-describing bootstrap manifest (DNA-encoded, full copy in every vault)."""
     job = store.load(job_id)
+    if not 1 <= n_vaults <= 6 or not job["sealed"]:
+        return {"error": "choose 1–6 vaults and prepare at least one archive file"}
     s = _settings(redundancy, strand_length, True, True)
     pools_out, man_pools = {}, {}
     for pid in job["pools"]:
@@ -281,7 +290,7 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
     man_strands = manifest.encode_manifest(man)
     written = vaults.write_vaults(store.job_dir(job_id), n_vaults, pools_out, man_strands)
     total_strands = sum(len(v) for v in pools_out.values())
-    cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length)
+    cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults)
     order = {"settings": {"redundancy": redundancy, "strand_length": strand_length, "coverage": coverage,
                           "n_vaults": n_vaults, "decoder": decoder}, "design_notes": design_notes,
              "order_files": written, "data_strands": total_strands, "manifest_strands": len(man_strands),
@@ -298,6 +307,8 @@ def destroy_primary(job_id: str) -> dict:
     """REQUIRES HUMAN APPROVAL. Disaster drill: delete the original uploads and every staging copy, so
     only the DNA vaults, the one-page bootstrap spec and the customer's KMS keys remain."""
     d = store.job_dir(job_id)
+    if not store.load(job_id).get("order"):
+        return {"error": "place a successful order before destroying primary data"}
     deleted = []
     for sub in ("uploads", "staging"):
         for f in (d / sub).iterdir():
@@ -336,11 +347,22 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
     coverage overrides the planned reads per strand (e.g. sequence deeper on a retry)."""
     d = store.job_dir(job_id)
     t0 = time.time()
+    # A new drill supersedes prior restored artifacts and certification.
+    reset_restored(job_id)
+    (d / "certificate.html").unlink(missing_ok=True)
+    store.update(job_id, lambda j: (j.pop("certificate", None), j.update(status="recovering")))
+    def fail(message):
+        result = {"error": message, "files": [], "pools": {}, "all_verified": False,
+                  "vaults_available": available, "n_vaults": (store.load(job_id).get("order") or {}).get("settings", {}).get("n_vaults", 0),
+                  "coverage": coverage, "attempt": attempt, "seconds": round(time.time() - t0, 2)}
+        store.update(job_id, lambda j: (j["drills"].append(result), j.update(status="recovery_failed")))
+        store.emit(job_id, "drill_result", "recovery-engineer", result)
+        return result
     available, merged = _read_vaults(d)
     for v in available:
         store.emit(job_id, "vault_event", "recovery-engineer", {"vault_id": v, "status": "reading"})
     if not available:
-        return {"error": "no vault survived", "files": []}
+        return fail("no vault survived")
     seed0 = 50_000 + 1000 * int(attempt)
 
     # 1. bootstrap manifest: merge decodes of every vault's copy
@@ -359,7 +381,7 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
         if man:
             break
     if man is None:
-        return {"error": "manifest unreadable from surviving vaults", "vaults_available": available}
+        return fail("manifest unreadable from surviving vaults")
     store.emit(job_id, "message", "recovery-engineer",
                {"text": f"Manifest decoded from DNA using only the bootstrap spec ({len(man['pools'])} pools, {len(man['files'])} files)."})
 
@@ -412,13 +434,13 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
         files_out.append(entry)
 
     result = {"vaults_available": available, "n_vaults": man["n_vaults"], "coverage": cov, "attempt": attempt,
-              "files": files_out, "pools": pool_results, "all_verified": all(f["sha256_match"] for f in files_out),
+              "files": files_out, "pools": pool_results, "all_verified": bool(files_out) and all(f["sha256_match"] for f in files_out),
               "seconds": round(time.time() - t0, 2)}
     for v in available:
         store.emit(job_id, "vault_event", "recovery-engineer", {"vault_id": v, "status": "healthy"})
     store.emit(job_id, "drill_result", "recovery-engineer", result)
     store.update(job_id, lambda j: (j["drills"].append(result),
-                                    j.update(status="recovered" if result["all_verified"] else j["status"])))
+                                    j.update(status="recovered" if result["all_verified"] else "recovery_failed")))
     return result
 
 

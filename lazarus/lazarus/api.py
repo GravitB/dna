@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import shutil
 from pathlib import Path
@@ -27,7 +28,17 @@ MAX_UPLOAD_BYTES = 200_000
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample_data" / "northstar_bio"
 WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 
-app = FastAPI(title="Lazarus")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    # Persisted artifacts remain readable, but in-memory agent execution cannot survive a restart.
+    for saved in store.list_jobs():
+        if saved["status"] in ("created", "running", "inventoried", "prepared", "ordered", "primary_destroyed", "recovering") or saved["status"].startswith("awaiting_approval:"):
+            store.update(saved["id"], lambda j: j.update(status="interrupted", error="Server restarted. Start a new archive, or run a recovery drill if vaults exist."))
+    yield
+
+app = FastAPI(title="Lazarus", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -54,10 +65,21 @@ async def create_job(
     mode: str = Form("agent"),
     files: list[UploadFile] | None = File(None),
 ):
-    pol = json.loads(policy)
-    pol = {"retention_years": float(pol.get("retention_years", 50)), "tech": pol.get("tech", "nanopore"),
-           "coverage": float(pol.get("coverage", 10)), "budget_usd": float(pol.get("budget_usd", 50)),
-           "target": float(pol.get("target", 1.0)), "n_vaults": int(pol.get("n_vaults", 3)), "notes": pol.get("notes", "")}
+    if mode not in ("agent", "autopilot"):
+        raise HTTPException(400, "mode must be agent or autopilot")
+    try:
+        raw = json.loads(policy)
+        pol = {"retention_years": float(raw.get("retention_years", 50)), "tech": raw.get("tech", "nanopore"),
+               "coverage": float(raw.get("coverage", 10)), "budget_usd": float(raw.get("budget_usd", 50)),
+               "target": float(raw.get("target", 1.0)), "n_vaults": int(raw.get("n_vaults", 3)), "notes": str(raw.get("notes", ""))}
+        for key in ("retention_years", "coverage", "budget_usd", "target"):
+            if not math.isfinite(pol[key]):
+                raise ValueError("policy numbers must be finite")
+        if not (0 <= pol["retention_years"] <= 1000 and 1 <= pol["coverage"] <= 100 and
+                pol["budget_usd"] > 0 and 0 < pol["target"] <= 1 and 1 <= pol["n_vaults"] <= 6):
+            raise ValueError("invalid policy range: years 0–1000, coverage 1–100, positive budget, target (0,1], vaults 1–6")
+    except (ValueError, TypeError, AttributeError, OverflowError) as exc:
+        raise HTTPException(400, str(exc)) from exc
     if pol["tech"] not in ("nanopore", "illumina"):
         raise HTTPException(400, "tech must be nanopore or illumina")
     if mode == "agent" and not os.environ.get("ANTHROPIC_API_KEY"):
@@ -69,7 +91,7 @@ async def create_job(
         for f in SAMPLE_DIR.iterdir():
             shutil.copy(f, up / f.name)
     for f in files or []:
-        data = await f.read()
+        data = await f.read(MAX_UPLOAD_BYTES + 1)
         total += len(data)
         if total > MAX_UPLOAD_BYTES:
             shutil.rmtree(store.job_dir(job_id))
@@ -121,6 +143,8 @@ async def events(job_id: str, since: int = 0):
 @app.post("/api/jobs/{job_id}/approve")
 async def approve(job_id: str, body: dict):
     r = agent.RUNS.get(job_id)
+    if body.get("decision") not in ("approve", "reject", "edit"):
+        raise HTTPException(400, "invalid approval decision")
     if not r or not r.decide(body):
         raise HTTPException(409, "nothing is waiting for approval")
     return {"ok": True}
@@ -140,6 +164,8 @@ async def drill(job_id: str, body: dict | None = None):
     body = body or {}
     res = await asyncio.to_thread(tools.recover_archive, job_id=job_id, attempt=int(body.get("attempt", 1)),
                                   coverage=body.get("coverage"))
+    if "all_verified" in res:
+        await asyncio.to_thread(tools.write_certificate, job_id=job_id, summary="Recovery drill updated from measured results.")
     return res
 
 
@@ -147,7 +173,7 @@ async def drill(job_id: str, body: dict | None = None):
 def job_file(job_id: str, name: str):
     base = store.job_dir(job_id).resolve()
     p = (base / name).resolve()
-    if not str(p).startswith(str(base)) or not p.is_file() or p.parts[len(base.parts)] in ("kms",):
+    if not p.is_relative_to(base) or not p.is_file() or p.parts[len(base.parts)] in ("kms",):
         raise HTTPException(404)
     return FileResponse(p)
 

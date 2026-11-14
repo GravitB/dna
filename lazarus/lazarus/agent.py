@@ -143,7 +143,7 @@ class Run:
         try:
             if tool == "place_synthesis_order":
                 summary = tools.estimate_cost.__wrapped__(self.job_id, float(args.get("redundancy", 1.0)),
-                                                          float(args.get("coverage", 10)), int(args.get("strand_length", 110)))
+                                                          float(args.get("coverage", 10)), int(args.get("strand_length", 110)), int(args.get("n_vaults", 3)))
                 job = store.load(self.job_id)
                 summary["stress"] = [{k: s[k] for k in ("scenario", "recovery_rate", "n_trials", "passed")} | {"redundancy": s["settings"]["redundancy"]}
                                      for s in job["stress"]][-8:]
@@ -163,7 +163,10 @@ class Run:
             store.update(self.job_id, lambda j: j.update(status="running", mode=self.mode))
             if self.mode == "autopilot":
                 from . import autopilot
-                autopilot.run(self.job_id, approve=lambda t, a: self._ask(t, a).get("decision") in ("approve", "edit"))
+                result = autopilot.run(self.job_id, approve=lambda t, a: self._ask(t, a).get("decision") in ("approve", "edit"))
+                if result.get("error") or result.get("stopped"):
+                    store.update(self.job_id, lambda j: j.update(status="stopped", error=result.get("error") or result["stopped"]))
+                    store.emit(self.job_id, "message", "supervisor", {"text": result.get("error") or result.get("stopped")})
             else:
                 self._run_agent()
             store.update(self.job_id, lambda j: j.update(finished=True))
