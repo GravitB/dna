@@ -2238,3 +2238,8 @@ fieldset.mode label.inline {
 .notice .simulation {
   margin-right: 4px;
 }
+/* Avoid an accidental vertical scrollbar in the archive tab bar. */
+.tabs { overflow-y: hidden; }
+@media (max-width: 720px) {
+  .tabs { position: relative; top: auto; z-index: 1; }
+}

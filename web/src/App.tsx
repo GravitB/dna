@@ -1,3 +1,4 @@
+import StorageScale from "./StorageScale";
 import { LearnedArchive } from "./LearnedArchive";
 import DnaExplorer from "./DnaExplorer";
 import { useEffect, useRef, useState } from "react";
@@ -166,6 +167,7 @@ function Archives() {
         <HeroHelix jobs={jobs} />
       </section>
       <Journey />
+      <StorageScale />
       <ErrorBox error={error} retry={load} />
       {!jobs ? (
         <p role="status">Loading archives…</p>
@@ -412,6 +414,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
               </p>
             </>
           )}
+          {step === 0 && selected.length > 0 && <StorageScale files={selected} />}
           {step === 1 && (
             <>
               <h2>What must this archive support?</h2>
@@ -1059,6 +1062,7 @@ function ArchiveView({ id }: { id: string }) {
               {active === "dna" && (
                 <>
                   <DnaStory job={job} id={id} />
+                  <StorageScale job={job} />
                   <DnaExplorer job={job} />
                 </>
               )}
