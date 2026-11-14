@@ -1,0 +1,27 @@
+/* Lazarus read-only embedding overrides; upstream oxView remains a separate GPL application. */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+  background: #f3f7ff !important;
+}
+body > * {
+  display: none !important;
+}
+body > #threeCanvas {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: #f3f7ff !important;
+  margin: 0 !important;
+  touch-action: none;
+}
+#threeCanvas:focus-visible {
+  outline: 3px solid #2459c4;
+  outline-offset: -4px;
+}
