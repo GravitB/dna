@@ -12,6 +12,8 @@ SUPABASE_SECRET_KEY=sb_secret_...
 SUPABASE_DB_URL=postgresql://...  # database owner connection from the Supabase Connect dialog
 ```
 
+If tables are already installed through the authenticated Supabase MCP connection or SQL Editor, skip the database setup command and run `lazarus-cloud check`; `SUPABASE_DB_URL` is not needed by the running application.
+
 Use the session pooler connection if the direct database host cannot be reached on your network. URL-encode special characters in the database password. A backend API secret permits Storage/Data API access but **cannot run schema migrations**; setup requires the database connection string (or applying the SQL migration in the dashboard's SQL Editor).
 
 From `lazarus/`:
@@ -70,3 +72,15 @@ cd ../web && npm test && npm run build
 ```
 
 The storage suite exercises the real HTTP adapter with a protocol double, including revision conflicts, lost responses, upload failures, corruption, encrypted key custody, imports, and recovery after deleting the entire local job directory. A live Supabase database test additionally requires the installed migration and valid project credentials.
+
+## Opt-in live backend verification
+
+With the backend running in Supabase mode, run this from the repository root:
+
+```bash
+lazarus/.venv/bin/python scripts/verify_supabase.py
+```
+
+This creates a fictional Northstar Bio archive, approves its simulated order and working-copy deletion, checks every file, simulates losing one location, and verifies recovery again from an empty temporary local jobs directory. It preserves the resulting cloud archive and report for inspection. It uses a $100 modeled budget and makes no physical purchase.
+
+The normal pytest suite explicitly defaults to local storage; cloud unit tests install their protocol double. It never uses the configured live project. Live verification is a separate, opt-in command.
