@@ -11,3 +11,7 @@ lazarus/jobs/
 web/node_modules/
 web/dist/
 .DS_Store
+# Secret environment files and Supabase CLI state
+.env.*
+!.env.example
+supabase/.temp/
