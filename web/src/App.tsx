@@ -69,7 +69,8 @@ export default function App() {
     <>
       <header>
         <a className="brand" href="#/">
-          Lazarus<span>Records that endure</span>
+          <img src={`${import.meta.env.BASE_URL}mark.svg`} alt="" width="28" height="28" />
+          Lazarus<span>Business workspace</span>
         </a>
         <nav aria-label="Main navigation">
           <a href="/">Home</a>
