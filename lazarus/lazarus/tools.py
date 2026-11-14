@@ -13,6 +13,9 @@ import mimetypes
 import shutil
 import time
 from pathlib import Path
+from typing import Literal
+
+Decoder = Literal["baseline", "polish"]  # 'polish' = Erbgut's CNN PolishDecoder
 
 from . import crypto, dna, manifest, store, vaults, presentation, artifacts, experiment
 from .persistence import get_cloud
@@ -296,7 +299,7 @@ def run_codec_experiment(
     redundancy: float,
     coverage: float,
     strand_length: int = 110,
-    decoder: str = "baseline",
+    decoder: Decoder = "baseline",
     trials: int = 8,
     homopolymer_rule: bool = True,
     gc_rule: bool = True,
@@ -322,7 +325,7 @@ def run_codec_experiment(
 
 @logged
 def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], coverages: list[float],
-                    decoder: str = "baseline", trials: int = 6, strand_length: int = 110,
+                    decoder: Decoder = "baseline", trials: int = 6, strand_length: int = 110,
                     compare_rules: bool = True) -> dict:
     """Grid search: run an experiment for every (redundancy, coverage) pair and rule combination. Use it to map the
     recovery / cost frontier quickly before confirming the best point with more trials."""
@@ -354,7 +357,7 @@ def run_codec_sweep(job_id: str, pool_id: str, redundancies: list[float], covera
 
 @logged
 def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, scenario: str,
-                n_vaults: int = 3, strand_length: int = 110, decoder: str = "polish", trials: int = 6,
+                n_vaults: int = 3, strand_length: int = 110, decoder: Decoder = "polish", trials: int = 6,
                 target: float = 1.0, homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """Red-team a design under a condition it was NOT tuned on. pool_id='all' (recommended) attacks the
     whole archive: a trial only passes if every pool is recovered. scenario:
@@ -422,7 +425,7 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
 
 @logged
 def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vaults: int = 3,
-                          strand_length: int = 110, decoder: str = "polish", design_notes: str = "",
+                          strand_length: int = 110, decoder: Decoder = "polish", design_notes: str = "",
                           homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
     """REQUIRES HUMAN APPROVAL. Encode every pool with the approved setting, spread strands across
     n_vaults sites (strand i -> vault i mod n), write vendor-ready order.fasta/order.csv per vault, and
