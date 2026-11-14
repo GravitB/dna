@@ -107,6 +107,7 @@ describe("business archive workspace", () => {
       (screen.getByLabelText(/How many years should we simulate\?/) as HTMLInputElement)
         .value,
     ).toBe("25");
+    fireEvent.change(screen.getByLabelText("Encoding approach"), {target:{value:"standard"}});
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Analyze archive" }));
     await waitFor(() =>
@@ -123,6 +124,7 @@ describe("business archive workspace", () => {
       "final.txt",
     ]);
     expect(JSON.parse(fd.get("policy") as string).retention_years).toBe(25);
+    expect(fd.get("encoding_mode")).toBe("standard");
   });
   it("blocks approval without matching passing evidence", async () => {
     location.hash = "#/job/test";

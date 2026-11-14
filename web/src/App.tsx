@@ -1,3 +1,4 @@
+import { LearnedArchive } from "./LearnedArchive";
 import DnaExplorer from "./DnaExplorer";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -216,6 +217,16 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     revised?.company || (sample ? "Northstar Bio" : ""),
   );
   const [policy, setPolicy] = useState<Policy>(revised?.policy || (sample ? {...defaults, coverage:16} : defaults));
+  const [encodingMode, setEncodingMode] = useState("evaluated");
+  const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
+  const [modelError, setModelError] = useState("");
+  useEffect(() => {
+    if (sample) return;
+    let active = true;
+    setModelAvailable(null);
+    post("/encoding-options", policy).then(r => {if (active) {setModelAvailable(r.available); setModelError("");}}).catch(e => {if (active) setModelError(e.message);});
+    return () => {active = false;};
+  }, [sample, policy.tech, policy.retention_years, policy.coverage]);
   const [mode, setMode] = useState(llm ? "agent" : "autopilot");
   const [samples, setSamples] = useState<FileInfo[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -249,6 +260,8 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
       return setError(
         "The demo accepts up to 200 KB total. Choose fewer or smaller files.",
       );
+    if (step === 1 && !sample && encodingMode === "evaluated" && !modelAvailable)
+      return setError("No compatible evaluated model is available. Choose fresh learning or standard encoding.");
     if (
       step === 1 &&
       (!(policy.retention_years >= 0 && policy.retention_years <= 1000) ||
@@ -270,6 +283,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     fd.append("analysis_preset", sample ? "quick_demo" : "standard");
     fd.append("policy", JSON.stringify(policy));
     fd.append("mode", mode);
+    fd.append("encoding_mode", sample ? "standard" : encodingMode);
     fd.append("use_samples", String(sample));
     fd.append("selected_files", JSON.stringify(selected.map((f) => f.name)));
     files.forEach((f) => fd.append("files", f));
@@ -404,6 +418,16 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
           {step === 1 && (
             <>
               <h2>What must this archive support?</h2>
+              {!sample && <fieldset><legend>How should we design the archive?</legend>
+                <label>Encoding approach<select value={encodingMode} onChange={e => setEncodingMode(e.target.value)}>
+                  <option value="evaluated">Use an evaluated learned model</option>
+                  <option value="fresh">Train a fresh learned model</option>
+                  <option value="standard">Use standard DNA rules</option>
+                </select></label>
+                <p>{modelAvailable === null ? "Checking for a compatible model…" : modelAvailable ? "An evaluated model matches these reader and aging settings." : "No evaluated model matches these settings. Choose fresh learning or standard rules to continue."}</p>
+                {modelError && <p className="error">{modelError}</p>}
+                <small>Fresh learning runs real computation with a ten-minute limit and can be canceled. It compares learned and standard DNA on your files. All results are simulated; a learned design may not improve recovery.</small>
+              </fieldset>}
               <div className="two">
                 <label>
                   How many years should we simulate?
@@ -780,6 +804,7 @@ function ArchiveView({ id }: { id: string }) {
               correct={() => action("/approve", {decision: "edit", args: pending.summary.correction})}
             />
           )}
+          <LearnedArchive job={job} busy={busy} action={action} />
           <DnaStory job={job} id={id} />
           <section>
             <div className="section-heading">
@@ -1080,6 +1105,9 @@ function activity(evs: Ev[]) {
   const names: Record<string, string> = {
     inventory_files: "Preparing your file: checking the selected records.",
     prepare_archive: "Compressing and encrypting your records.",
+    prepare_learned_model: "Preparing the chosen encoding approach and model evidence.",
+    compare_archive_candidates: "Comparing frozen standard and learned DNA on your files.",
+    validate_archive_candidate: "Testing the selected DNA against independent failures.",
     run_codec_sweep: "Comparing designs using real codec experiments.",
     run_quick_design: "Comparing designs and testing failures. Three trials per point.",
     stress_test: "Testing failures: checking whether the archive can still be recovered.",
@@ -1129,6 +1157,7 @@ function Approval({
               <dd>{String(shownArgs.n_vaults || 3)}</dd>
             </div>
           </dl>
+          {p.args.candidate_id && <p>Exact tested candidate: <code className="candidate-id">{String(p.args.candidate_id)}</code>. These measurements use a small exploratory trial count.</p>}
           <table>
             <thead>
               <tr>

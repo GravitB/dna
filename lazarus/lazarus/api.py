@@ -41,6 +41,9 @@ async def lifespan(app):
         await asyncio.to_thread(cloud.check)
     # Persisted artifacts remain readable, but in-memory agent execution cannot survive a restart.
     for saved in store.list_jobs():
+        current = store.load(saved['id'])
+        if current.get('learning_state', {}).get('status') in ('running', 'canceling'):
+            store.update(saved['id'], lambda j: j['learning_state'].update(status='interrupted', message='Server restarted during learning. Retry fresh learning or use standard encoding.'))
         if saved["status"] in (
             "created",
             "running",
@@ -147,11 +150,14 @@ async def create_job(
     use_samples: bool = Form(False),
     analysis_preset: str = Form("standard"),
     mode: str = Form("agent"),
+    encoding_mode: str | None = Form(None),
     files: list[UploadFile] | None = File(None),
 ):
     from .experience import QUICK_SAMPLE
     if analysis_preset not in ("standard", "quick_demo"):
         raise HTTPException(400, "Unknown analysis preset")
+    if encoding_mode not in (None, "standard", "evaluated", "fresh"):
+        raise HTTPException(400, "Choose standard, evaluated or fresh encoding")
     if mode not in ("agent", "autopilot"):
         raise HTTPException(400, "mode must be agent or autopilot")
     try:
@@ -221,12 +227,19 @@ async def create_job(
             raise ValueError("Selected files must be unique uploaded filenames.")
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    if analysis_preset == 'quick_demo':
+        encoding_mode = 'standard'
+    elif encoding_mode == 'evaluated':
+        from . import model_registry
+        if model_registry.find(pol) is None:
+            raise HTTPException(409, 'No compatible evaluated model. Choose fresh learning or standard encoding.')
     job_id = store.new_job(company, pol)
     store.update(
         job_id,
         lambda j: j.update(
             name=name.strip() or company,
             analysis_preset=analysis_preset,
+            encoding_mode=encoding_mode,
             selected_files=selected,
             intake_files=[
                 {"name": n, "bytes": len(d), "included": n in selected}
@@ -245,6 +258,26 @@ async def create_job(
     )
     agent.start(job_id, mode)
     return {"job_id": job_id}
+
+
+@app.post('/api/encoding-options')
+def encoding_options(policy: dict):
+    from . import model_registry
+    try:
+        row = model_registry.find(policy)
+        return {'evaluated_model': model_registry.summary(row), 'available': row is not None}
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(400, 'Invalid channel settings')
+
+
+@app.post('/api/jobs/{job_id}/learning/cancel')
+def cancel_learning(job_id: str):
+    from . import learned
+    try:
+        learned.cancel(job_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    return {'ok': True}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -336,7 +369,7 @@ async def approve(job_id: str, body: dict):
             if body["decision"] == "edit"
             else r.pending["args"]
         )
-        cost = tools.estimate_cost.__wrapped__(
+        cost = {} if args.get("candidate_id") else tools.estimate_cost.__wrapped__(
             job_id,
             args.get("redundancy", 1),
             args.get("coverage", 10),

@@ -31,7 +31,7 @@ export function ProgressInfo({job, events}: {job:Archive; events:Ev[]}) {
   const [now,setNow] = useState(Date.now());
   useEffect(() => { const t=setInterval(()=>setNow(Date.now()),1000);return ()=>clearInterval(t);},[]);
   const seconds=Math.max(0,Math.floor((now-Date.parse(job.created))/1000));
-  const complete=events.filter(e=>["experiment_result","stress_result"].includes(e.type)).length;
+  const complete=events.reduce((n,e)=>n+(["experiment_result","stress_result"].includes(e.type) ? 1 : e.type === "candidate_result" ? e.data.scenarios?.length || 0 : 0),0);
   const failed=events.filter(e=>e.type==="stress_result" && !e.data.passed).slice(-1)[0];
   const latest=events.filter(e=>e.type==="tool_call").slice(-1)[0];
   return <div className="progress-info"><p>{Math.floor(seconds/60)}m {seconds%60}s elapsed · {complete} measured tests completed</p>

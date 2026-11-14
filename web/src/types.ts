@@ -1,3 +1,4 @@
+import type { Comparison, Trial } from "./LearnedArchive";
 export type Policy = {
   retention_years: number;
   budget_usd: number;
@@ -61,6 +62,10 @@ export type Drill = {
   pools: Record<string, unknown>;
 };
 export type Archive = ArchiveSummary & {
+  encoding_mode?: "standard" | "evaluated" | "fresh";
+  learning_state?: {status: string; message: string};
+  candidate_comparison?: Comparison;
+  candidates?: Record<string, {validation?: {state: string; passed: boolean; scenarios: Trial[]}}>;
   analysis_preset?: "standard" | "quick_demo";
   originals_available?: boolean;
   dna_summary?: {data_strands:number; manifest_strands:number; data_letters:number; manifest_letters:number; total_letters:number; example:string} | null;

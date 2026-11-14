@@ -15,8 +15,17 @@ def run(job_id: str, approve=lambda tool, args: True, trials: int = 4) -> dict:
     if not cold:
         return {"error": "No cold archive files selected; upload a PDF, CSV, or image."}
     prep = tools.prepare_archive(job_id=job_id, file_names=cold, tier_notes="Records explicitly selected by the user")
-    if inv.get("analysis_preset") == "quick_demo":
-        result = tools.run_quick_design(job_id=job_id)
+    if inv.get('encoding_mode') or inv.get("analysis_preset") == "quick_demo":
+        if inv.get("analysis_preset") == "quick_demo":
+            result = tools.run_quick_design(job_id=job_id)
+        else:
+            ready = tools.prepare_learned_model(job_id=job_id)
+            if ready.get('error'):
+                return ready
+            compared = tools.compare_archive_candidates(job_id=job_id)
+            if compared.get('error'):
+                return compared
+            result = tools.validate_archive_candidate(job_id=job_id)
         if result.get("error"):
             return result
         args = result["settings"]
@@ -31,7 +40,7 @@ def run(job_id: str, approve=lambda tool, args: True, trials: int = 4) -> dict:
         if destroyed.get("error"):
             return destroyed
         drill = tools.recover_archive(job_id=job_id)
-        tools.write_certificate(job_id=job_id, summary="Quick picture demo: real codec, three trials per point, scripted analysis.")
+        tools.write_certificate(job_id=job_id, summary="Real codec, three trials per point, scripted analysis; exploratory simulation, not compliance certification.")
         return drill
     pool = prep["reference_pool"]
     cov = float(inv["policy"]["coverage"])

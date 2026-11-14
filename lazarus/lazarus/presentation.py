@@ -54,6 +54,12 @@ def design(job, args):
 
 
 def proposal(job, args, cost):
+    if args.get("candidate_id"):
+        from . import candidates
+        try:
+            return candidates.approval(job["id"], args)
+        except (ValueError, FileNotFoundError) as exc:
+            return {"can_approve": False, "evidence": [], "error": str(exc)}
     rows = evidence(job, args)
     return {
         **cost,
