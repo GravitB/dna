@@ -1,0 +1,1 @@
+Standup 2026-11-10: fix CI, order pipette tips, update slide deck. Edited daily.

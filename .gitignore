@@ -1,0 +1,13 @@
+# Erbgut is a dependency without a license file; teammates download it themselves (see README)
+vendor/
+hackmit2026-main.zip
+scratch/
+.env
+**/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+lazarus/jobs/
+web/node_modules/
+web/dist/
+.DS_Store
