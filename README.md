@@ -2,6 +2,9 @@
 
 **HackPrinceton tracks:** Business & Enterprise (main) and Best use of deepagents by LangChain (special).
 
+New to DNA storage? Start with [the biology, explained from zero](docs/BIOLOGY.md), then
+[how Lazarus works end to end](docs/HOW_IT_WORKS.md).
+
 Some records have to survive for decades: clinical-trial files (FDA 21 CFR Part 11), bank records
 (SEC 17a-4), legal holds and media masters. DNA is the densest and longest-lasting storage medium
 there is. It is also very noisy, and nobody at a normal company knows how to design a DNA archive or
