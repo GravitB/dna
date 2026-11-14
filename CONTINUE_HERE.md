@@ -1,44 +1,36 @@
-# Resume here — business DNA simulator integration
+# Learned DNA integration — current handoff
 
-Handoff: November 14, 2026. Branch: GB. User paused to continue on another device because credits are low.
+Updated November 14, 2026 on `dsun-1/friendly-business-ux`, after merging the original `GB` continuation.
 
-## Goal and decisions
+## Implemented
 
-Implement Erbgut's real learned encoding for company files uploaded through Lazarus UI. Compare standard versus learned designs, approve a tested candidate, store exact DNA sequences in private Supabase, simulate sequencing, recover and verify original file hashes. No physical lab: label synthesis, aging, sequencing and costs as simulated/modeled.
+- Business file → DNA → restored-file interface, quick picture demo and actual FASTA viewer remain intact.
+- Explicit evaluated-model, fresh-learning and standard-rule choices. Legacy API clients may omit `encoding_mode` for the original broader standard search; saved legacy archives still recover.
+- Real Erbgut risk-CNN training in a cancelable worker, with controlled synthetic sequences, independent ranking evaluation, progress, timeout and server-restart interruption reporting. The CNN decoder remains frozen.
+- Server-generated model registry with profile, codec-source and decoder-checkpoint compatibility checks; SHA-256 identity and safe `weights_only=True` loading. No user-supplied pickle models.
+- Frozen candidates encode actual encrypted uploaded files with the learned scorer. Matched standard/learned selection uses training seeds; only the selected candidate receives final held-out validation. Failed final evidence cannot be re-rolled.
+- Exact candidate ID, file/placement metadata, sequence checksums, immutable evidence artifact and modeled budget gate approval. Orders use frozen strands verbatim and retain all codec settings in the self-describing DNA manifest.
+- Comparison/revision history, final evidence, cancellation and next actions in the business UI. Reports explicitly describe simulation evidence and are not compliance certification.
+- Learned FASTA persists through the existing artifact backend. Recovery needs vault DNA and separate keys, not the scorer, candidates or working ciphertext.
 
-Two modes were approved: default to an evaluated compatible learned model; offer fresh learning in a background experiment. If no compatible model exists, explicitly offer fresh learning or standard encoding. Keep the 200 KB upload limit. Preserve approvals for archive creation and destructive disaster drills.
+Read [docs/LEARNED_ARCHIVES.md](docs/LEARNED_ARCHIVES.md) for architecture, limits and reproduction. Run `scripts/verify_learned_archive.py` from the Lazarus virtualenv for a clearly labeled scripted real-computation check.
 
-The LangChain prize brief is only “Best use of deepagents — by LangChain: Teams build a deepagent for any use case they want.” Do not invent judging criteria. User has 1–3 days. Demonstrate actual agent delegation, measured experiments, adversarial failures and revisions, approval and verified recovery. Attribute Erbgut's research to its authors; its published improvements are not Lazarus results.
+## Verified on this machine
 
-## What exists
+- 64 backend tests; 21 frontend tests; production frontend build.
+- Real fresh training: 512 controlled training sequences, 128 independent evaluation sequences, eight label repetitions, 12 completed epochs. This small model evaluation does not establish a learned encoding improvement.
+- Live Gemini/deepagents notebook-image archive: `20261114-021339-c010c3`. Actual delegation to researcher, codec engineer, adversary, recovery engineer and compliance. Both standard and learned designs failed the location-loss selection test at 0.8 redundancy; both passed at 1.2. The requested learned design was selected on training evidence. This tie is not an improvement claim.
+- All five final held-out scenarios passed 3/3 (exploratory). The browser displayed the matching proposal and both approval steps, followed by the recovered image and SHA-256 verification.
+- Original/restored notebook: 25,144 bytes; SHA-256 `af294b42c2fed0af0c992da92566f02617bd1c766544b1a6529731a00a7d76ab`.
+- Frozen candidate `bf0e9c42a5ebc8e5b834f7b6e6c05ca11ebb4822c97312d723103872c0c67cf0`; every ordered data strand matched it exactly. Actual FASTA total: 410,190 DNA letters. Modeled writing cost: $41.02; this is not an API charge or purchase.
+- Working uploads/staging were absent when the restored file was checked byte-for-byte.
+- Preserve the honest failed tiny-image run `20261114-021103-668c39`: it failed final held-out validation and was not ordered. Earlier debugging runs are not successful demonstrations.
+- Supabase tests use the real HTTP adapter against a private-storage protocol double. A learned candidate survives an empty-machine recovery and one lost location without loading its risk model.
 
-- React UI, FastAPI backend, working Supabase archive persistence, crypto, simulated vaults, recovery and certificates.
-- oxView integration committed on visual-dna (34e13a2), inherited by this branch. Uses real saved FASTA. Frontend previously passed 16 tests and actual browser checks.
-- New learning.py runs upstream run_loop in a separate process. codec-researcher specialist and run_learning_experiment tool are wired into the agent. Reports/logs/checkpoints are published as artifacts. Quick/full process budgets are 600/7200 seconds.
-- Learning currently uses Erbgut's fixed research file, NOT uploaded customer bytes. It does NOT deploy its scorer into actual archive orders.
-- Upstream can train risk selection; its CNN polisher stays fixed. Only upstream's transformer supports decoder adaptation. Do not claim CNN retraining.
-- candidates.py creates content-addressed frozen strand sets from encrypted customer pools, records model provenance, verifies content/input identity and has a stress validation function. It is NOT connected to API, UI, approval or order creation yet.
-- dna.py now round-trips every EncoderSettings field instead of dropping seed/risk settings.
-- persistence.valid_path allows learning/candidates/candidate-evidence artifacts.
-- Most recent backend suite: 44 tests passed using `lazarus/.venv/bin/python -m pytest lazarus/tests -q`. Candidate tests prove scorer invocation and byte recovery; they do not prove a trained model improves outcomes. Candidate stress validation has not had end-to-end verification.
+## Remaining external verification
 
-## Next implementation steps
+Live hosted Supabase credentials are not configured on this machine; current live runs use local storage. Do not claim a hosted Supabase end-to-end run. Configure the private project using README/Supabase setup, then verify a fresh learned archive on a second empty working directory. Do not destroy existing user archives.
 
-1. Review these unfinished changes before extending them. Create real model registry/provenance and compatibility checks. Never load arbitrary user-supplied pickle models. Keep standard encoding explicitly available when no evaluated model exists.
-2. Connect learning output to candidate creation for uploaded encrypted pools. Keep train-based selection separate from held-out final validation; do not choose or repeatedly tune candidates using held-out outcomes. Compare standard and learned under matched conditions. Fresh learning must support progress, cancellation and restart interruption reporting.
-3. Bind experiments, exact sequence checksums, costs and approval to an immutable candidate ID. Current tools.place_synthesis_order still constructs standard settings and calls dna.encode_bytes without a learned scorer. Replace that path for candidate orders with frozen, validated sequences; retain legacy archive compatibility. Update proposal/approval guards and preserve decoding settings in the DNA manifest.
-4. Add upload mode selection, candidate comparison, progress/cancel controls and a clear decision history to the business UI. Existing activity stream can carry agent evidence. Do not show research-file results as customer archive validation.
-5. Validate exact candidate -> approved order -> Supabase FASTA -> oxView -> recovery identity. Recover with local staging/working artifacts unavailable. Test missing/corrupt models, checksum failures, stale approval, vault loss, failed recovery and cancellation.
-6. Run a real complete training experiment, Supabase round trip and LLM-driven agent run. Demonstrate actual delegation and a measured revision. Existing 44 tests do not establish those outcomes.
-7. Label certificates simulation recoverability reports rather than regulatory certification. Produce reproducible evidence and clearly label recorded demonstrations.
+Models, keys, uploads, jobs and `.env` remain ignored local/private runtime data and are not pushed to Git. A teammate without the registry must choose fresh learning or standard encoding. Erbgut remains an ignored dependency under `vendor/hackmit2026-main`; follow README setup instead of relying on another developer's absolute checkout path.
 
-## Environment and branch notes
-
-- This branch starts from visual-dna, NOT latest main. Last observed origin/main c2f7178 includes Gemini integration and dark theme, absent here. Earlier dry merge was conflict-free; 16 frontend tests/build passed. Recheck latest main and integrate deliberately; avoid losing newer Gemini changes. DNA panel still has light-theme colors.
-- `.env.example` Gemini placeholder is included. Real `.env` secrets are excluded. On the new device configure credentials securely; do not expect this branch to carry them.
-- Supabase project reference: feiddjfuuqfvvsiionds. Existing verified sample archive: 20261114-004141-19a4a2. Do not destroy existing user archives while testing.
-- Erbgut dependency is ignored under vendor/hackmit2026-main; follow README setup on the new device. The separate /Users/gravitbali/hackmit2026 checkout matched all 23 engine files, five profiles and the decoder checkpoint. Do not depend on that absolute path.
-- A manually started learning experiment wrote to ignored scratch/learning-check on the old device. Its completion was not verified and its artifacts are not in Git. Do not claim it passed or rely on it.
-- `uv` was unavailable on the old shell; the existing virtualenv worked. Browser connector bootstrap failed there; actual UI checks used Playwright and system Chrome. See scripts/verify_visual_dna.mjs.
-
-Read docs/DEEPAGENTS_DEMO.md for the demo narrative and docs/VISUAL_DNA.md for viewer verification.
+All synthesis, aging and sequencing are simulated. Costs are modeled placeholders. No physical synthesis, accounts/subscriptions or regulatory certification is implemented. Attribute the codec, simulators, risk learner and frozen decoder to Erbgut; its published improvements are not Lazarus measurements.

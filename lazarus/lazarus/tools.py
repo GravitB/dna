@@ -18,6 +18,10 @@ from . import crypto, dna, manifest, store, vaults, presentation, artifacts
 from .persistence import get_cloud
 
 TOOL_AGENT = {
+    "prepare_learned_model": "codec-researcher",
+    "compare_archive_candidates": "codec-engineer",
+    "validate_archive_candidate": "adversary",
+    "run_quick_design": "codec-engineer",
     "inventory_files": "supervisor",
     "prepare_archive": "supervisor",
     "build_profile": "codec-engineer",
@@ -148,7 +152,7 @@ def inventory_files(job_id: str) -> dict:
             }
         )
     store.update(job_id, lambda j: j.update(files=out, status="inventoried"))
-    return {"company": job["company"], "policy": job["policy"], "files": out}
+    return {"company": job["company"], "policy": job["policy"], "files": out, "analysis_preset": job.get("analysis_preset", "standard"), "encoding_mode": job.get("encoding_mode")}
 
 
 @logged
@@ -158,6 +162,8 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
     (the largest one) to run codec experiments on. tier_notes: why other files stay off DNA."""
     d = store.job_dir(job_id)
     job = store.load(job_id)
+    if job.get("order") or job.get("candidate_comparison"):
+        return {"error": "Archive inputs are frozen. Create a revised archive to change files or rerun design selection."}
     if not file_names or len(file_names) != len(set(file_names)):
         return {"error": "Select unique archive files."}
     if "selected_files" in job and set(file_names) != set(job["selected_files"]):
@@ -264,6 +270,15 @@ def _experiment(
     n_vaults=1,
     years_factor=1.0,
 ):
+    from .experience import QUICK_REDUNDANCIES
+    job = store.load(job_id)
+    if job.get("analysis_preset") == "quick_demo":
+        if redundancy not in QUICK_REDUNDANCIES or strand_length != 110 or not homopolymer_rule or not gc_rule:
+            raise ValueError("Quick demo uses the four bounded redundancy candidates and default DNA rules.")
+        trials = 3
+        pool_id = "all"
+        if coverage not in (16, 9.6) or n_vaults not in (1, 3):
+            raise ValueError("Quick demo uses 16 planned reads and three locations.")
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     prof = _profile(job_id, coverage, years_factor)
     if pool_id == "all":
@@ -362,6 +377,10 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
     'simulator_b' (structurally different sequencing channel), 'decay_x2' (twice the storage time),
     'low_coverage' (only 60% of the planned reads), 'vault_loss' (one of n_vaults sites destroyed).
     passed = recovery_rate >= target."""
+    job = store.load(job_id)
+    if n_vaults != int(job["policy"].get("n_vaults", n_vaults)):
+        raise ValueError("Use the customer's fixed storage location count.")
+    target = job["policy"].get("target", target)
     kw = dict(channel="a", lost_vaults=0, n_vaults=n_vaults, years_factor=1.0)
     cov = coverage
     if scenario == "simulator_b":
@@ -424,35 +443,51 @@ def estimate_cost(job_id: str, redundancy: float, coverage: float, strand_length
 @logged
 def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vaults: int = 3,
                           strand_length: int = 110, decoder: str = "polish", design_notes: str = "",
-                          homopolymer_rule: bool = True, gc_rule: bool = True) -> dict:
+                          homopolymer_rule: bool = True, gc_rule: bool = True, candidate_id: str | None = None) -> dict:
     """REQUIRES HUMAN APPROVAL. Encode every pool with the approved setting, spread strands across
     n_vaults sites (strand i -> vault i mod n), write vendor-ready order.fasta/order.csv per vault, and
     write the self-describing bootstrap manifest (DNA-encoded, full copy in every vault)."""
     job = store.load(job_id)
+    if job.get('order'):
+        return job['order'] if candidate_id and job['order'].get('candidate_id') == candidate_id else {'error': 'Archive already ordered; create a new archive to change its design.'}
     if not 1 <= n_vaults <= 6 or not job["sealed"]:
         return {"error": "choose 1–6 vaults and prepare at least one archive file"}
     if n_vaults != int(job["policy"]["n_vaults"]):
         return {"error": "vault count must match the customer's policy; start a new job to change it"}
+    if job.get("encoding_mode") and job.get("analysis_preset") != "quick_demo" and not candidate_id:
+        return {"error": "Use the exact tested candidate_id for this archive."}
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
-    if 'selected_files' in job:
+    if 'selected_files' in job and not candidate_id:
         cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults, homopolymer_rule, gc_rule)
         args = dict(redundancy=redundancy, coverage=coverage, strand_length=strand_length, n_vaults=n_vaults, decoder=decoder, homopolymer_rule=homopolymer_rule, gc_rule=gc_rule)
         if not presentation.proposal(job, args, cost)['can_approve']:
             return {'error': 'Passing whole-archive tests for this design within budget are required.'}
-    pools_out, man_pools = {}, {}
-    for pid in job["pools"]:
-        enc = dna.encode_bytes(_pool_bytes(job_id, pid), s)
-        pools_out[pid] = enc.strands
-        man_pools[pid] = {**dna.meta_to_dict(enc.meta), "offset": job["pools"][pid]["offset"]}
-    files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools", "offset", "cipher_bytes")}
-             for name, v in job["sealed"].items()}
-    man = {"format": "lazarus-manifest-v1", "company": job["company"], "created": store.now(),
-           "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
-                       "planned_coverage": coverage, "recommended_decoder": decoder},
-           "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
-           "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in local demo keystore by key_id",
-           "stream": "pools concatenated in pool-id order form one stream; each file is stream[offset:offset+cipher_bytes]",
-           "pools": man_pools, "files": files}
+    if candidate_id:
+        from . import candidates
+        args = dict(candidate_id=candidate_id, redundancy=redundancy, coverage=coverage,
+                    n_vaults=n_vaults, strand_length=strand_length, decoder=decoder,
+                    homopolymer_rule=homopolymer_rule, gc_rule=gc_rule)
+        checked = candidates.approval(job_id, args)
+        if not checked['can_approve']:
+            return {'error': 'Candidate evidence, settings, decoder and budget must match the approved archive.'}
+        frozen = candidates.load(job_id, candidate_id)
+        pools_out = {pid: p['strands'] for pid, p in frozen['pools'].items()}
+        man = candidates.archive_manifest(job, candidate_id, frozen)
+    else:
+        pools_out, man_pools = {}, {}
+        for pid in job["pools"]:
+            enc = dna.encode_bytes(_pool_bytes(job_id, pid), s)
+            pools_out[pid] = enc.strands
+            man_pools[pid] = {**dna.meta_to_dict(enc.meta), "offset": job["pools"][pid]["offset"]}
+        files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools", "offset", "cipher_bytes")}
+                 for name, v in job["sealed"].items()}
+        man = {"format": "lazarus-manifest-v1", "company": job["company"], "created": store.now(),
+               "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
+                           "planned_coverage": coverage, "recommended_decoder": decoder},
+               "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
+               "crypto": "zstd then AES-256-GCM, aad=lazarus-v1, key in local demo keystore by key_id",
+               "stream": "pools concatenated in pool-id order form one stream; each file is stream[offset:offset+cipher_bytes]",
+               "pools": man_pools, "files": files}
     man_strands = manifest.encode_manifest(man)
     written = vaults.write_vaults(
         store.job_dir(job_id), n_vaults, pools_out, man_strands
@@ -476,13 +511,17 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
             )
             raise
     total_strands = sum(len(v) for v in pools_out.values())
-    cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults, homopolymer_rule, gc_rule)
-    order = {"settings": {"redundancy": redundancy, "strand_length": strand_length, "coverage": coverage,
+    cost = candidates.cost(job_id, candidate_id) if candidate_id else estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults, homopolymer_rule, gc_rule)
+    order = {"candidate_id": candidate_id, "settings": {"redundancy": redundancy, "strand_length": strand_length, "coverage": coverage,
                           "n_vaults": n_vaults, "decoder": decoder, "homopolymer_rule": homopolymer_rule,
                           "gc_rule": gc_rule}, "design_notes": design_notes,
              "order_files": written, "data_strands": total_strands, "manifest_strands": len(man_strands),
              "total_bases": (total_strands + n_vaults * len(man_strands)) * strand_length, "cost": cost,
              "placed": store.now()}
+    if candidate_id:
+        order['settings'].update(frozen['settings'])
+        order['validation_path'] = job['candidates'][candidate_id]['validation_path']
+        order['model'] = man['model']
     store.update(
         job_id,
         lambda j: j.update(
@@ -495,6 +534,9 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
             },
         ),
     )
+    from .experience import dna_summary
+    summary = dna_summary(store.load(job_id))
+    store.update(job_id, lambda j: j.update(dna_summary=summary))
     for v in range(1, n_vaults + 1):
         store.emit(
             job_id, "vault_event", "supervisor", {"vault_id": v, "status": "healthy"}
@@ -701,6 +743,7 @@ def recover_archive(
         "tested_at": store.now(),
         "vaults_available": available,
         "n_vaults": man["n_vaults"],
+        "candidate_id": man.get("candidate_id"),
         "coverage": cov,
         "attempt": attempt,
         "files": files_out,
@@ -737,6 +780,8 @@ def read_job_log(job_id: str) -> dict:
     j = store.load(job_id)
     return {
         "policy": j["policy"],
+        "candidate_comparison": j.get("candidate_comparison"),
+        "candidate_validation": {cid: c.get("validation") for cid, c in j.get("candidates", {}).items() if c.get("validation")},
         "n_experiments": len(j["experiments"]),
         "stress": [
             {
@@ -793,6 +838,12 @@ def render_certificate(j: dict, summary: str) -> str:
         f"<td>{s['n_recovered']}/{s['n_trials']}</td><td>{'PASS' if s['passed'] else 'FAIL'}</td></tr>"
         for s in j["stress"]
     )
+    if o.get('candidate_id'):
+        selected = j.get('candidates', {}).get(o['candidate_id'], {})
+        for r in selected.get('validation', {}).get('scenarios', []):
+            rows_stress += (f"<tr><td>{e(r['scenario'])} (held-out)</td><td>{o['settings']['redundancy']:.2f}</td>"
+                            f"<td>{o['settings']['coverage']:g}</td><td>{r['n_recovered']}/{r['n_trials']}</td>"
+                            f"<td>{'PASS' if r['recovery_rate'] >= j['policy']['target'] else 'FAIL'}</td></tr>")
     rows_files = "".join(
         f"<tr><td>{e(f['name'])}</td><td>{'yes' if f['sha256_match'] else 'no'}</td><td>{'yes' if f['baseline_would_recover'] else 'no'}</td>"
         f"<td>{'yes' if f['polish_would_recover'] else 'no'}</td><td><code>{e(f.get('sha256', '')[:16])}…</code></td></tr>"
@@ -816,6 +867,7 @@ h1{{font-size:22px}}table{{border-collapse:collapse;width:100%;margin:8px 0 20px
 <p>Redundancy {st.get("redundancy")} · strand length {st.get("strand_length")} · planned reads/strand {st.get("coverage")} ·
 decoder {e(str(st.get("decoder")))} · {o.get("data_strands")} data strands + {o.get("manifest_strands")} manifest strands per vault ·
 {o.get("total_bases")} bases · modeled write cost ${(o.get("cost") or {}).get("write_usd")}</p>
+<p>Frozen candidate: {e(str(o.get("candidate_id") or "Legacy archive"))}. Learned model: {e(str((o.get("model") or {}).get("id") or "Standard rules"))}. Small trial counts are exploratory.</p>
 <h3>Experiment history (includes earlier designs)</h3><table><tr><th>Scenario</th><th>Redundancy</th><th>Reads</th><th>Recovered</th><th>Result</th></tr>{rows_stress}</table>
 <h3>Recovery test</h3><p>Tested: {e(str(last.get("tested_at", "Not recorded"))) if last else "Not recorded"}</p>
 <p>Vaults available: {last["vaults_available"] if last else "-"} of {last["n_vaults"] if last else "-"} · reads/strand {last["coverage"] if last else "-"}</p>
@@ -823,8 +875,40 @@ decoder {e(str(st.get("decoder")))} · {o.get("data_strands")} data strands + {o
 <h3>Chain of custody</h3><table><tr><th>Time (UTC)</th><th>Agent</th><th>Action</th><th>Status</th></tr>{rows_custody}</table>
 <p><small>Demo report, not a regulatory certification or guarantee of future recovery. DNA synthesis and sequencing are simulated
 with the Erbgut channel model (calibrated on real Nanopore reads; storage decay extrapolated). Costs are modeled placeholders.
-Keys are stored in a local demo keystore. Codec, simulators and CNN decoder: Erbgut (HackMIT 2026).</small></p>
+Keys are stored separately from DNA: locally in demo mode, or as encrypted key records in Supabase. Codec, simulators and CNN decoder: Erbgut (HackMIT 2026).</small></p>
 </body></html>"""
+
+
+@logged
+def run_quick_design(job_id: str) -> dict:
+    """Bounded real picture demo: three trials per point, baseline then CNN and four stress tests. Returns exact measured settings or an honest failure."""
+    from .experience import QUICK_REDUNDANCIES
+    job = store.load(job_id)
+    if job.get("analysis_preset") != "quick_demo":
+        return {"error": "This tool is for the quick picture demo only."}
+    if job.get("quick_design_result"):
+        return job["quick_design_result"]
+    for red in QUICK_REDUNDANCIES:
+        args = dict(job_id=job_id, pool_id="all", redundancy=red, coverage=16, trials=3)
+        normal = run_codec_experiment(**args, decoder="baseline")
+        if normal.get("recovery_rate", 0) < job["policy"]["target"]:
+            continue
+        cost = estimate_cost(job_id=job_id, redundancy=red, coverage=16, n_vaults=3)
+        if not cost.get("within_budget"):
+            continue
+        confirmed = run_codec_experiment(**args, decoder="polish")
+        if confirmed.get("recovery_rate", 0) < job["policy"]["target"]:
+            continue
+        tests = [stress_test(**args, n_vaults=3, decoder="polish", scenario=s) for s in presentation.SCENARIOS]
+        if all(t.get("passed") for t in tests):
+            result = {"settings": dict(redundancy=red, coverage=16, n_vaults=3, strand_length=110,
+                       decoder="polish", homopolymer_rule=True, gc_rule=True), "cost": cost,
+                       "trials_per_point": 3, "stress": tests}
+            store.update(job_id, lambda j: j.update(quick_design_result=result))
+            return result
+    result = {"error": "No quick-demo design passed every measured test within budget. Create a standard archive to explore further."}
+    store.update(job_id, lambda j: j.update(quick_design_result=result))
+    return result
 
 
 
@@ -869,7 +953,56 @@ def run_learning_experiment(job_id: str, quick: bool = True) -> dict:
     store.update(job_id, lambda j: j.setdefault("learning_experiments", []).append(report))
     return report
 
+@logged
+def prepare_learned_model(job_id: str) -> dict:
+    """Respect the upload's encoding choice. Reuse a compatible evaluated model or run cancelable fresh learning. Standard mode never trains."""
+    from . import learned, model_registry
+    job = store.load(job_id)
+    mode = job.get('encoding_mode', 'standard')
+    if mode == 'fresh' and job.get('learning_state', {}).get('status') in ('canceled', 'failed', 'interrupted'):
+        message = 'Fresh learning stopped. Create a revised archive to retry or choose standard encoding.'
+        store.update(job_id, lambda j: j.update(error=message, candidate_rejected=True))
+        return {'error': message}
+    if mode == 'standard':
+        return {'mode': mode, 'message': 'Standard encoding selected; no learned model is used.'}
+    row = job.get('prepared_model')
+    if not row:
+        row = learned.train(job_id) if mode == 'fresh' else model_registry.find(job['policy'])
+    if row is None:
+        message = 'No evaluated compatible model is available. Create a revised archive and choose fresh learning or standard encoding explicitly.'
+        store.update(job_id, lambda j: j.update(error=message, candidate_rejected=True))
+        return {'error': message}
+    model_registry.load(row, job['policy'])
+    store.update(job_id, lambda j: j.update(prepared_model=row))
+    return {'mode': mode, 'model': model_registry.summary(row)}
+
+
+@logged
+def compare_archive_candidates(job_id: str, redundancy: float = 0.8, trials: int = 3) -> dict:
+    """Freeze actual encrypted customer DNA and compare standard and learned encoding under matched train-seed tests. Does not approve or order."""
+    from . import learned
+    result = learned.compare(job_id, redundancy, trials)
+    if result.get('error') or not result.get('selected_id'):
+        message = result.get('error') or 'No candidate passed selection within budget. Create a revised archive with more reads or a larger modeled budget.'
+        store.update(job_id, lambda j: j.update(error=message, candidate_rejected=True))
+    return result
+
+
+@logged
+def validate_archive_candidate(job_id: str) -> dict:
+    """Adversary: validate the train-selected frozen candidate once on held-out normal and four stress scenarios, including bootstrap recovery. Return exact order settings or honest failure."""
+    from . import learned
+    result = learned.finalize(job_id)
+    if result.get('error'):
+        store.update(job_id, lambda j: j.update(error=result['error'], candidate_rejected=True))
+    return result
+
+
 ALL_TOOLS = [
+    prepare_learned_model,
+    compare_archive_candidates,
+    validate_archive_candidate,
+    run_quick_design,
     run_learning_experiment,
     inventory_files,
     prepare_archive,

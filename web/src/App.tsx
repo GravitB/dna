@@ -1,3 +1,4 @@
+import { LearnedArchive } from "./LearnedArchive";
 import DnaExplorer from "./DnaExplorer";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -19,6 +20,7 @@ import type {
   Ev,
   Pending,
 } from "./types";
+import { Journey, FilePreview, ProgressInfo, DnaStory } from "./experience";
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(`/api${path}`, init);
   const data = await r.json().catch(() => ({}));
@@ -140,21 +142,21 @@ function Archives() {
     <>
       <div className="page-heading">
         <div>
-          <h1>Your archives</h1>
+          <span className="eyebrow">THE DNA ARCHIVE WORKSPACE</span><h1>Keep important records recoverable.</h1>
           <p>
-            Know what you’re retaining, what needs a decision, and what you can
-            recover.
+            Turn a file into a tested DNA archive. Restore it and see proof that every byte came back.
           </p>
         </div>
         <div className="actions">
           <a className="button" href="#/new?sample">
-            Try sample archive
+            Try a picture demo
           </a>
           <a className="button primary" href="#/new">
-            Create archive
+            Archive my files
           </a>
         </div>
       </div>
+      <Journey />
       <ErrorBox error={error} retry={load} />
       {!jobs ? (
         <p role="status">Loading archives…</p>
@@ -162,10 +164,10 @@ function Archives() {
         <section className="empty-state">
           <h2>Your first archive starts with your records.</h2>
           <p>
-            Create an archive to test whether your records can be recovered.
+            Archive your files to test whether your records can be recovered.
           </p>
           <a className="button primary" href="#/new">
-            Create archive
+            Archive my files
           </a>
           <p>
             Or explore with fictional Northstar Bio records using “Try sample
@@ -173,43 +175,14 @@ function Archives() {
           </p>
         </section>
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Archive / organization</th>
-                <th>Records</th>
-                <th>Retention</th>
-                <th>Latest recovery test</th>
-                <th>Outcome / next action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((j) => (
-                <tr key={j.id}>
-                  <td>
-                    <a className="archive-link" href={`#/job/${j.id}`}>
-                      {j.name}
-                    </a>
-                    <small>{j.company}</small>
-                  </td>
-                  <td>{j.file_count ?? "Not recorded"}</td>
-                  <td>{j.retention_years} years</td>
-                  <td>{date(j.presentation.latest_test)}</td>
-                  <td>
-                    <span
-                      className={`badge ${j.presentation.verified && !j.presentation.needs_retest ? "success" : ""}`}
-                    >
-                      {j.presentation.label}
-                    </span>
-                    {j.presentation.pending_action && (
-                      <small>Waiting for your decision</small>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="archive-cards">
+          {jobs.map(j => <a className="archive-card" key={j.id} href={`#/job/${j.id}`}>
+            <span className={`badge ${j.presentation.verified && !j.presentation.needs_retest ? "success" : ""}`}>{j.presentation.label}</span>
+            <h2>{j.name}</h2><p>{j.company}</p>
+            <dl className="facts"><div><dt>Selected files</dt><dd>{j.file_count ?? "Not recorded"}</dd></div><div><dt>Simulated aging</dt><dd>{j.retention_years} years</dd></div></dl>
+            <small>Latest test: {date(j.presentation.latest_test)}</small>
+            <strong>{j.presentation.pending_action ? "Review your decision →" : j.presentation.verified ? "Open recovered files →" : "View progress and next step →"}</strong>
+          </a>)}
         </div>
       )}
       <section className="explanation">
@@ -243,7 +216,17 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
   const [company, setCompany] = useState(
     revised?.company || (sample ? "Northstar Bio" : ""),
   );
-  const [policy, setPolicy] = useState<Policy>(revised?.policy || defaults);
+  const [policy, setPolicy] = useState<Policy>(revised?.policy || (sample ? {...defaults, coverage:16} : defaults));
+  const [encodingMode, setEncodingMode] = useState("evaluated");
+  const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
+  const [modelError, setModelError] = useState("");
+  useEffect(() => {
+    if (sample) return;
+    let active = true;
+    setModelAvailable(null);
+    post("/encoding-options", policy).then(r => {if (active) {setModelAvailable(r.available); setModelError("");}}).catch(e => {if (active) setModelError(e.message);});
+    return () => {active = false;};
+  }, [sample, policy.tech, policy.retention_years, policy.coverage]);
   const [mode, setMode] = useState(llm ? "agent" : "autopilot");
   const [samples, setSamples] = useState<FileInfo[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -254,7 +237,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     setMode(llm ? "agent" : "autopilot");
   }, [llm]);
   const loadSamples = () =>
-    api("/samples")
+    api(sample ? "/samples?preset=quick_demo" : "/samples")
       .then(setSamples)
       .catch((e) => setError(e.message));
   useEffect(() => {
@@ -269,14 +252,16 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     setPolicy((p) => ({ ...p, [key]: value }));
   function next() {
     setError("");
-    if (step === 0 && (!name.trim() || !company.trim() || !selected.length))
+    if (step === 0 && !selected.length)
       return setError(
-        "Enter an archive name and organization, and select at least one record.",
+        "Select at least one file to archive.",
       );
     if (total > 200000)
       return setError(
         "The demo accepts up to 200 KB total. Choose fewer or smaller files.",
       );
+    if (step === 1 && !sample && encodingMode === "evaluated" && !modelAvailable)
+      return setError("No compatible evaluated model is available. Choose fresh learning or standard encoding.");
     if (
       step === 1 &&
       (!(policy.retention_years >= 0 && policy.retention_years <= 1000) ||
@@ -293,10 +278,12 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     setBusy(true);
     setError("");
     const fd = new FormData();
-    fd.append("name", name);
-    fd.append("company", company);
+    fd.append("name", name.trim() || selected[0]?.name || "My archive");
+    fd.append("company", company.trim() || "Personal workspace");
+    fd.append("analysis_preset", sample ? "quick_demo" : "standard");
     fd.append("policy", JSON.stringify(policy));
     fd.append("mode", mode);
+    fd.append("encoding_mode", sample ? "standard" : encodingMode);
     fd.append("use_samples", String(sample));
     fd.append("selected_files", JSON.stringify(selected.map((f) => f.name)));
     files.forEach((f) => fd.append("files", f));
@@ -317,7 +304,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
       </a>
       <div className="page-heading">
         <div>
-          <h1>{sample ? "Try a sample archive" : "Create an archive"}</h1>
+          <h1>{sample ? "Try a picture demo" : "Archive your files"}</h1>
           <p>
             Choose your records and requirements. We’ll test the archive design
             before you approve it.
@@ -346,7 +333,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                 exactly what enters this archive.
               </p>
               <label>
-                Archive name
+                Archive name (optional)
                 <input
                   value={name}
                   placeholder="e.g. Clinical trial records, 2026"
@@ -354,7 +341,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                 />
               </label>
               <label>
-                Organization
+                Organization (optional)
                 <input
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
@@ -362,8 +349,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
               </label>
               {sample ? (
                 <div className="info">
-                  Fictional Northstar Bio sample records. No company data is
-                  needed.
+                  A small sample picture. Real encoding and recovery, with three trials per measured point. No company data is needed.
                 </div>
               ) : (
                 <label className="upload">
@@ -392,10 +378,12 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                   </small>
                 </label>
               )}
+              {!sample && <p className="muted">Up to 200 KB total, including all selected uploads.</p>}
               {!!records.length && (
                 <div className="record-list">
                   {records.map((f) => (
                     <label className="record" key={f.name}>
+                      <FilePreview name={f.name} file={files.find(x => x.name === f.name)} src={sample ? `/api/samples/${encodeURIComponent(f.name)}/preview` : undefined} />
                       <input
                         type="checkbox"
                         checked={!excluded.includes(f.name)}
@@ -430,23 +418,29 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
           {step === 1 && (
             <>
               <h2>What must this archive support?</h2>
+              {!sample && <fieldset><legend>How should we design the archive?</legend>
+                <label>Encoding approach<select value={encodingMode} onChange={e => setEncodingMode(e.target.value)}>
+                  <option value="evaluated">Use an evaluated learned model</option>
+                  <option value="fresh">Train a fresh learned model</option>
+                  <option value="standard">Use standard DNA rules</option>
+                </select></label>
+                <p>{modelAvailable === null ? "Checking for a compatible model…" : modelAvailable ? "An evaluated model matches these reader and aging settings." : "No evaluated model matches these settings. Choose fresh learning or standard rules to continue."}</p>
+                {modelError && <p className="error">{modelError}</p>}
+                <small>Fresh learning runs real computation with a ten-minute limit and can be canceled. It compares learned and standard DNA on your files. All results are simulated; a learned design may not improve recovery.</small>
+              </fieldset>}
               <div className="two">
                 <label>
-                  Retention period (years)
-                  <input
-                    type="number"
-                    min="0"
-                    max="1000"
-                    value={policy.retention_years}
-                    onChange={(e) => set("retention_years", +e.target.value)}
-                  />
+                  How many years should we simulate?
+                  <select value={policy.retention_years} disabled={sample} onChange={e => set("retention_years", +e.target.value)}>
+                    {[10,25,50,100].map(y => <option key={y} value={y}>{y} years</option>)}
+                    {![10,25,50,100].includes(policy.retention_years) && <option value={policy.retention_years}>{policy.retention_years} years</option>}
+                  </select>
                   <small>
-                    The storage duration to simulate. Choose it using your
-                    organization’s retention policy.
+                    We model aging over this period, then try recovery now. This is not a promise that physical DNA will last that long.
                   </small>
                 </label>
                 <label>
-                  Estimated write budget (USD)
+                  Modeled DNA writing budget (USD)
                   <input
                     type="number"
                     min="0.01"
@@ -455,7 +449,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                     onChange={(e) => set("budget_usd", +e.target.value)}
                   />
                   <small>
-                    A limit for the modeled archive design. No payment is taken.
+                    This limits the simulated DNA design. Approving it purchases no storage. Gemini API usage is billed separately by your provider.
                   </small>
                 </label>
               </div>
@@ -468,8 +462,10 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                   placeholder="e.g. Keep final trial records and test loss of one location."
                 />
               </label>
+              {sample && <p className="info">Picture demo: 50 simulated years, three locations, 16 reads per piece, three trials per point. Use “Archive my files” for custom settings.</p>}
               <details>
                 <summary>Advanced settings</summary>
+                <fieldset disabled={sample}>
                 <p>The app tests technical designs against these settings.</p>
                 <div className="two">
                   <label>
@@ -521,6 +517,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                     </select>
                   </label>
                 </div>
+                </fieldset>
                 <label>
                   Analysis method
                   <select
@@ -790,7 +787,7 @@ function ArchiveView({ id }: { id: string }) {
                     ? "Restoring records and checking file integrity"
                     : "Testing a design for your records"}
                 </h2>
-                <p>{activity(evs)}</p>
+                <p>{activity(evs)}</p><ProgressInfo job={job} events={evs} />
                 <small>
                   Results will appear as tests complete. No decision is needed
                   yet.
@@ -804,11 +801,14 @@ function ArchiveView({ id }: { id: string }) {
               p={pending}
               busy={busy}
               decide={(d) => action("/approve", { decision: d })}
+              correct={() => action("/approve", {decision: "edit", args: pending.summary.correction})}
             />
           )}
+          <LearnedArchive job={job} busy={busy} action={action} />
+          <DnaStory job={job} id={id} />
           <section>
             <div className="section-heading">
-              <h2>Selected records</h2>
+              <h2>Your files</h2>
               <span>{expected.length || "Not recorded"} records</span>
             </div>
             <p>
@@ -827,7 +827,7 @@ function ArchiveView({ id }: { id: string }) {
                 <tbody>
                   {files.map((f) => (
                     <tr key={f.name}>
-                      <td>{f.name}</td>
+                      <td><div className="file-cell">{f.included && job.originals_available && <FilePreview name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}`} />}<span>{f.name}</span></div></td>
                       <td>{(f.bytes / 1000).toFixed(1)} KB</td>
                       <td>{f.included ? "Yes" : "Excluded by user"}</td>
                     </tr>
@@ -930,6 +930,12 @@ function ArchiveView({ id }: { id: string }) {
                   </tbody>
                 </table>
               </div>
+              <div className="restored-gallery">{latest.files.filter(f => f.sha256_match).map(f => <article key={f.name}>
+                <FilePreview large name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}?stage=restored&attempt=${job.drills.length}`} />
+                <h3>{f.name}</h3><span className="badge success">Restored unchanged · SHA-256 match</span>
+                <p>{((files.find(x => x.name === f.name)?.bytes || 0)/1000).toFixed(1)} KB · Exact file integrity verified</p>
+                <a className="button primary" download={f.name} href={`/api/jobs/${id}/files/restored/${encodeURIComponent(f.name)}`}>Download restored file</a>
+              </article>)}</div>
               <p className="muted">
                 File integrity is checked against the original SHA-256
                 fingerprint. Simulation evidence is not regulatory
@@ -1071,7 +1077,7 @@ function ArchiveView({ id }: { id: string }) {
               <dd>{money(job.policy.budget_usd)}</dd>
             </div>
             <div>
-              <dt>Estimated write cost</dt>
+              <dt>Modeled writing cost</dt>
               <dd>
                 {money(job.order?.cost.write_usd || pending?.summary.write_usd)}
               </dd>
@@ -1097,10 +1103,14 @@ function activity(evs: Ev[]) {
   const last = [...evs].reverse().find((e) => e.type === "tool_call");
   if (!last) return "Preparing your archive analysis.";
   const names: Record<string, string> = {
-    inventory_files: "Checking the selected records.",
+    inventory_files: "Preparing your file: checking the selected records.",
     prepare_archive: "Compressing and encrypting your records.",
-    run_codec_sweep: "Comparing archive designs.",
-    stress_test: "Testing recovery under adverse conditions.",
+    prepare_learned_model: "Preparing the chosen encoding approach and model evidence.",
+    compare_archive_candidates: "Comparing frozen standard and learned DNA on your files.",
+    validate_archive_candidate: "Testing the selected DNA against independent failures.",
+    run_codec_sweep: "Comparing designs using real codec experiments.",
+    run_quick_design: "Comparing designs and testing failures. Three trials per point.",
+    stress_test: "Testing failures: checking whether the archive can still be recovered.",
     place_synthesis_order: "Preparing the approved simulated archive.",
     recover_archive: "Restoring records and checking file integrity.",
     write_certificate: "Preparing your recovery report.",
@@ -1111,12 +1121,16 @@ function Approval({
   p,
   busy,
   decide,
+  correct,
 }: {
+  correct: () => void;
   p: Pending;
   busy: boolean;
   decide: (d: string) => void;
 }) {
   const order = p.tool === "place_synthesis_order";
+  const shown = p.summary.can_approve ? p.summary : p.summary.correction_summary || p.summary;
+  const shownArgs = p.summary.correction_summary ? p.summary.correction || p.args : p.args;
   return (
     <section className="approval">
       <span className="badge">Your decision</span>
@@ -1131,18 +1145,19 @@ function Approval({
           </p>
           <dl className="facts">
             <div>
-              <dt>Estimated write cost</dt>
-              <dd>{money(p.summary.write_usd)}</dd>
+              <dt>Modeled writing cost</dt>
+              <dd>{money(shown.write_usd)}</dd>
             </div>
             <div>
-              <dt>Estimated cost per recovery test</dt>
-              <dd>{money(p.summary.read_usd)}</dd>
+              <dt>Modeled cost per recovery test</dt>
+              <dd>{money(shown.read_usd)}</dd>
             </div>
             <div>
               <dt>Storage locations</dt>
-              <dd>{p.args.n_vaults || 3}</dd>
+              <dd>{String(shownArgs.n_vaults || 3)}</dd>
             </div>
           </dl>
+          {p.args.candidate_id && <p>Exact tested candidate: <code className="candidate-id">{String(p.args.candidate_id)}</code>. These measurements use a small exploratory trial count.</p>}
           <table>
             <thead>
               <tr>
@@ -1152,7 +1167,7 @@ function Approval({
               </tr>
             </thead>
             <tbody>
-              {p.summary.evidence?.map((e) => (
+              {shown.evidence?.map((e) => (
                 <tr key={e.scenario}>
                   <td>{e.label}</td>
                   <td>
@@ -1171,14 +1186,15 @@ function Approval({
               ))}
             </tbody>
           </table>
-          {!p.summary.can_approve && (
+          {p.summary.correction && <div className="info">The AI proposed different settings. The results above describe the measured alternative that passed the required tests. <button disabled={busy} onClick={correct}>Use tested settings and approve</button></div>}
+          {!p.summary.can_approve && !p.summary.correction && (
             <div className="error">
               This proposal needs passing tests for the selected design within
               budget. Reject it to revise the requirements.
             </div>
           )}
           <p>
-            Simulation results do not guarantee future recovery. No purchase
+            These are modeled DNA costs; Gemini API charges are separate. Simulation results do not guarantee future recovery. No purchase
             will be made.
           </p>
         </>

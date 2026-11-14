@@ -83,19 +83,20 @@ describe("business archive workspace", () => {
     expect(screen.getByText("Simulation workspace")).toBeTruthy();
     expect(
       screen
-        .getByRole("link", { name: "Try sample archive" })
+        .getByRole("link", { name: "Try a picture demo" })
         .getAttribute("href"),
     ).toBe("#/new?sample");
     expect(screen.queryByText("ANTHROPIC_API_KEY")).toBeNull();
   });
   it("preserves records and requirements through the wizard and submits explicit selection", async () => {
-    location.hash = "#/new?sample";
+    location.hash = "#/new";
     render(<App />);
+    fireEvent.change(screen.getByLabelText(/Choose records/), {target:{files:[new File(["final"],"final.txt"),new File(["draft"],"draft.txt")]}});
     await screen.findByText("final.txt");
     fireEvent.click(screen.getByLabelText(/draft.txt/));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    fireEvent.change(screen.getByLabelText(/Retention period \(years\)/), {
-      target: { value: "75" },
+    fireEvent.change(screen.getByLabelText(/How many years should we simulate\?/), {
+      target: { value: "25" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(
@@ -103,9 +104,10 @@ describe("business archive workspace", () => {
     ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(
-      (screen.getByLabelText(/Retention period \(years\)/) as HTMLInputElement)
+      (screen.getByLabelText(/How many years should we simulate\?/) as HTMLInputElement)
         .value,
-    ).toBe("75");
+    ).toBe("25");
+    fireEvent.change(screen.getByLabelText("Encoding approach"), {target:{value:"standard"}});
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Analyze archive" }));
     await waitFor(() =>
@@ -121,7 +123,8 @@ describe("business archive workspace", () => {
     expect(JSON.parse(fd.get("selected_files") as string)).toEqual([
       "final.txt",
     ]);
-    expect(JSON.parse(fd.get("policy") as string).retention_years).toBe(75);
+    expect(JSON.parse(fd.get("policy") as string).retention_years).toBe(25);
+    expect(fd.get("encoding_mode")).toBe("standard");
   });
   it("blocks approval without matching passing evidence", async () => {
     location.hash = "#/job/test";

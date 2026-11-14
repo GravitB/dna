@@ -60,3 +60,13 @@ def test_agent_hitl_flow(tmp_path, monkeypatch):
     job = store.load(jid)
     assert job["drills"][-1]["all_verified"]
     assert not any((store.job_dir(jid) / "uploads").iterdir())
+
+
+def test_provider_plan_arguments_never_crash_observer(tmp_path, monkeypatch):
+    monkeypatch.setattr(store, 'JOBS_DIR', tmp_path)
+    jid=store.new_job('Plan parsing', {})
+    r=agent.Run(jid)
+    for todos in ('[{"content":"Test frozen candidate","status":"pending"}]', 'malformed', ['bad row'], {'content':'bad shape'}):
+        r._on_update((), {'model':{'messages':[call('write_todos',{'todos':todos},1)]}})
+    assert len(store.events_since(jid,0,0))==4
+    assert agent._plan_rows('bad')==[]

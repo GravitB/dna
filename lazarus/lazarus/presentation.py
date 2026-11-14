@@ -54,6 +54,12 @@ def design(job, args):
 
 
 def proposal(job, args, cost):
+    if args.get("candidate_id"):
+        from . import candidates
+        try:
+            return candidates.approval(job["id"], args)
+        except (ValueError, FileNotFoundError) as exc:
+            return {"can_approve": False, "evidence": [], "error": str(exc)}
     rows = evidence(job, args)
     return {
         **cost,
@@ -61,6 +67,7 @@ def proposal(job, args, cost):
         "can_approve": bool(job["sealed"])
         and set(job["sealed"]) == set(job.get("selected_files", job["sealed"]))
         and all(r["state"] == "passed" for r in rows)
+        and args.get("n_vaults", 3) == job["policy"]["n_vaults"]
         and cost.get("within_budget", False),
     }
 

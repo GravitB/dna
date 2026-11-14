@@ -83,6 +83,21 @@ written to DNA with one fixed, published setting. A future reader needs only the
 
 ## Run it
 
+### Picture demo
+
+Choose **Try a picture demo** to encode a bundled 412-byte PNG, test the real codec, and restore the same image.
+The quick preset fixes 50 simulated years, three locations and 16 planned reads per strand. It measures three trials
+per point, searches only redundancy 0.8, 1.2, 1.6 and 2.0, and checks normal recovery plus all four stress scenarios.
+The Gemini supervisor delegates the measured design and evidence review to specialists; scripted analysis remains
+available under Advanced. If no design passes within the modeled budget, the demo reports that failure.
+
+The file preview is removed when the job's working originals are deleted. The restored preview is served only after
+hash verification. DNA letter counts come from the emitted FASTA files and include manifest copies across locations.
+Modelled DNA costs do not include actual Gemini API charges. API usage may consume credits on your provider account.
+
+Ordinary uploads use the standard search and accept up to 200 KB total. Existing archives continue to work; missing
+legacy measurements are shown as unavailable rather than reconstructed from guesses.
+
 Requirements: Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, git.
 
 ```bash

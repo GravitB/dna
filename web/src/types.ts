@@ -1,3 +1,4 @@
+import type { Comparison, Trial } from "./LearnedArchive";
 export type Policy = {
   retention_years: number;
   budget_usd: number;
@@ -37,6 +38,8 @@ export type Pending = {
   tool: string;
   args: Record<string, number | string>;
   summary: {
+    correction?: Record<string, unknown> | null;
+    correction_summary?: {write_usd?:number; read_usd?:number; evidence?:Evidence[];can_approve?:boolean};
     write_usd?: number;
     read_usd?: number;
     within_budget?: boolean;
@@ -59,6 +62,13 @@ export type Drill = {
   pools: Record<string, unknown>;
 };
 export type Archive = ArchiveSummary & {
+  encoding_mode?: "standard" | "evaluated" | "fresh";
+  learning_state?: {status: string; message: string};
+  candidate_comparison?: Comparison;
+  candidates?: Record<string, {validation?: {state: string; passed: boolean; scenarios: Trial[]}}>;
+  analysis_preset?: "standard" | "quick_demo";
+  originals_available?: boolean;
+  dna_summary?: {data_strands:number; manifest_strands:number; data_letters:number; manifest_letters:number; total_letters:number; example:string} | null;
   storage?: { backend: "local" | "supabase"; state: string };
   policy: Policy;
   selected_files?: string[];
