@@ -18,23 +18,8 @@ import type {
   Ev,
   Pending,
 } from "./types";
-const api = async (path: string, init?: RequestInit) => {
-  const r = await fetch(`/api${path}`, init);
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok)
-    throw new Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : "Request failed. Please try again.",
-    );
-  return data;
-};
-const post = (path: string, body = {}) =>
-  api(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+import { api, date, post } from "./api";
+import { DecoderPage, DnaExperiment } from "./Dna";
 const money = (v?: number) =>
   v == null
     ? "Not recorded"
@@ -42,8 +27,6 @@ const money = (v?: number) =>
         style: "currency",
         currency: "USD",
       }).format(v);
-const date = (v?: string | null) =>
-  v ? new Date(v).toLocaleString() : "Not recorded";
 const defaults: Policy = {
   retention_years: 50,
   budget_usd: 50,
@@ -78,6 +61,7 @@ export default function App() {
     return () => removeEventListener("hashchange", f);
   }, []);
   const id = hash.startsWith("#/job/") ? hash.slice(6).split("?")[0] : null;
+  const decoderPage = hash.startsWith("#/decoder");
   return (
     <>
       <header>
@@ -86,12 +70,19 @@ export default function App() {
         </a>
         <nav aria-label="Main navigation">
           <a
-            aria-current={!id && !hash.startsWith("#/new") ? "page" : undefined}
+            aria-current={
+              !id && !hash.startsWith("#/new") && !decoderPage
+                ? "page"
+                : undefined
+            }
             href="#/"
           >
             Archives
           </a>
           <a href="#/new">New archive</a>
+          <a aria-current={decoderPage ? "page" : undefined} href="#/decoder">
+            DNA Decoder
+          </a>
         </nav>
         <span className="simulation">Simulation workspace</span>
       </header>
@@ -101,7 +92,9 @@ export default function App() {
       </div>
       <main>
         <ErrorBox error={connection} retry={connect} />
-        {id ? (
+        {decoderPage ? (
+          <DecoderPage key={hash} query={hash.split("?")[1] || ""} />
+        ) : id ? (
           <ArchiveView key={id} id={id} />
         ) : hash.startsWith("#/new") ? (
           <Create
@@ -935,6 +928,7 @@ function ArchiveView({ id }: { id: string }) {
               </p>
             </section>
           )}
+          {job.order && <DnaExperiment id={id} job={job} />}
           {job.order && !job.pending && (
             <section>
               <h2>Recovery scenarios</h2>

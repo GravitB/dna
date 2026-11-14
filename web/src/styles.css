@@ -271,7 +271,7 @@ label {
   font-weight: 500;
   margin: 18px 0;
 }
-input:not([type="checkbox"]),
+input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
   display: block;
@@ -621,5 +621,168 @@ details pre {
     scroll-behavior: auto !important;
     animation: none !important;
     transition: none !important;
+  }
+}
+/* ---------------------------------------------------------------- DNA experiment + decoder */
+.dna-flow {
+  flex-wrap: wrap;
+}
+.dna-flow li {
+  padding: 10px 12px;
+}
+.dna-step {
+  margin: 26px 0;
+  padding-top: 18px;
+  border-top: 1px dashed #263445;
+}
+.dna-step > summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0 20px;
+}
+.dna-facts {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.small-dd {
+  font-size: 14px;
+}
+.hash {
+  font-size: 12px;
+  color: #9aabbf;
+  overflow-wrap: anywhere;
+}
+.small {
+  font-size: 13px;
+}
+.dna-seq,
+.alignment code {
+  font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  word-break: break-all;
+}
+.info.warn {
+  border-left-color: #e0a43a;
+}
+.alignment {
+  overflow-x: auto;
+  background: #0f1620;
+  border: 1px solid #263445;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 4px 0 12px;
+}
+.alignment div {
+  display: flex;
+  gap: 10px;
+  white-space: pre;
+}
+.alignment b {
+  width: 40px;
+  flex: none;
+  font-size: 11px;
+  color: #9aabbf;
+  font-weight: 500;
+}
+.alignment code {
+  word-break: normal;
+}
+.d-sub {
+  background: #4a3a10;
+  color: #ffd166;
+}
+.d-ins {
+  background: #12301f;
+  color: #4cd08a;
+}
+.d-del {
+  background: #3a1519;
+  color: #ff8a95;
+}
+.legend span {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.strand {
+  margin: 14px 0;
+}
+.verdict.pass {
+  background: #12301f;
+  color: #4cd08a;
+}
+.verdict.partial {
+  background: #3d2f0d;
+  color: #ffd166;
+}
+.verdict.fail {
+  background: #3a1519;
+  color: #ff8a95;
+}
+.verdict.incomplete {
+  background: #263445;
+  color: #c7d2df;
+}
+.verdict-text {
+  font-size: 18px;
+}
+.verdict-text.pass b {
+  color: #4cd08a;
+}
+.verdict-text.fail b,
+.verdict-text.partial b {
+  color: #ff8a95;
+}
+fieldset {
+  border: 1px solid #263445;
+  border-radius: 5px;
+  padding: 10px 14px;
+  margin: 14px 0;
+}
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 18px 6px 0;
+  font-weight: 400;
+}
+fieldset.mode label.inline {
+  display: flex;
+}
+.steps {
+  padding-left: 20px;
+}
+.steps li {
+  margin: 4px 0;
+}
+.steps li.done {
+  color: #4cd08a;
+}
+.steps li.failed {
+  color: #ff8a95;
+}
+.history {
+  list-style: none;
+  padding: 0;
+}
+.history li {
+  margin: 8px 0;
+}
+.history small {
+  display: block;
+  color: #9aabbf;
+}
+.decode-result {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #263445;
+}
+@media (max-width: 760px) {
+  .archive-layout {
+    grid-template-columns: 1fr;
   }
 }
