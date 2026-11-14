@@ -104,10 +104,8 @@ def validate(job_id, candidate_id, trials=4, *, heldout=True):
                 decoded = dna.decode_clusters(clusters, meta.settings.strand_length, 'polish')
                 restored = dna.recover_bytes(decoded, meta)
                 ok = ok and restored is not None and hashlib.sha256(restored).hexdigest() == pool['payload_sha256']
-            # Instructions have a full copy at every location; test a surviving copy.
-            clusters = channel.simulate(bootstrap, p, seed + 17)
-            decoded = dna.decode_clusters(clusters, manifest.BOOTSTRAP.strand_length, 'polish')
-            ok = ok and manifest.decode_manifest(decoded) == bootstrap_manifest
+            ok = ok and manifest_recovered(bootstrap, bootstrap_manifest, channel, p, seed,
+                                           surviving_copies(policy['n_vaults'], scenario))
             successes += bool(ok)
         rows.append({'scenario': scenario, 'n_trials': trials, 'n_recovered': successes,
                      'recovery_rate': successes / trials})
@@ -118,6 +116,25 @@ def validate(job_id, candidate_id, trials=4, *, heldout=True):
     store.update(job_id, lambda j: j['candidates'][candidate_id].update(**{('validation' if heldout else 'screening'): report, ('validation_path' if heldout else 'screening_path'): evidence_path}))
     store.emit(job_id, 'candidate_result', 'adversary' if heldout else 'codec-engineer', report)
     return report
+
+
+def surviving_copies(n_vaults, scenario):
+    """Every location stores a full manifest copy; losing a location loses its copy."""
+    return max(1, int(n_vaults) - (1 if scenario == 'vault_loss' else 0))
+
+
+def manifest_recovered(bootstrap, expected, channel, profile, seed, copies):
+    """Read the manifest the way the recovery drill does (tools.recovery_drill): sequence each
+    surviving location's independent copy in turn and pool the decoded strands until the manifest
+    decodes. Copy 0 keeps the original seed so single-location results are unchanged."""
+    from . import manifest
+    decoded = []
+    for k in range(copies):
+        clusters = channel.simulate(bootstrap, profile, seed + 17 + 7919 * k)
+        decoded += dna.decode_clusters(clusters, manifest.BOOTSTRAP.strand_length, 'polish')
+        if manifest.decode_manifest(decoded) == expected:
+            return True
+    return False
 
 
 def proposal_args(job_id, candidate_id):
