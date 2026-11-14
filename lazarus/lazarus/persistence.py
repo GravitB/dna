@@ -30,7 +30,7 @@ class RevisionConflict(StorageError):
 def valid_path(path: str) -> str:
     parts = PurePosixPath(path).parts
     allowed = path == "certificate.html" or (
-        len(parts) >= 2 and parts[0] in ("vaults", "restored")
+        len(parts) >= 2 and parts[0] in ("vaults", "restored", "exports", "simulations", "decodes")
     )
     if (
         not allowed

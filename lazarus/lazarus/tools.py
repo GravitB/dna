@@ -14,7 +14,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import crypto, dna, manifest, store, vaults, presentation, artifacts
+from . import crypto, dna, manifest, store, vaults, presentation, artifacts, experiment
 from .persistence import get_cloud
 
 TOOL_AGENT = {
@@ -445,7 +445,7 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
         man_pools[pid] = {**dna.meta_to_dict(enc.meta), "offset": job["pools"][pid]["offset"]}
     files = {name: {k: v[k] for k in ("key_id", "nonce", "sha256", "bytes", "pools", "offset", "cipher_bytes")}
              for name, v in job["sealed"].items()}
-    man = {"format": "lazarus-manifest-v1", "company": job["company"], "created": store.now(),
+    man = {"format": "lazarus-manifest-v1", "archive_id": job_id, "company": job["company"], "created": store.now(),
            "channel": {"tech": job["policy"]["tech"], "retention_years": job["policy"]["retention_years"],
                        "planned_coverage": coverage, "recommended_decoder": decoder},
            "n_vaults": n_vaults, "placement": "strand i of each pool -> vault (i mod n_vaults) + 1",
@@ -498,6 +498,8 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
         store.emit(
             job_id, "vault_event", "supervisor", {"vault_id": v, "status": "healthy"}
         )
+    # Step 1 of the before/after experiment: immutable clean (pre-simulation) export of this order.
+    order["export"] = experiment.build_clean_export(job_id, man)
     return order
 
 

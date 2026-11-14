@@ -51,6 +51,18 @@ def download(jid, path):
         vault_id = path.split("/")[1].removeprefix("vault-")
         if job.get("vault_locations", {}).get(vault_id) == "destroyed":
             raise FileNotFoundError("Simulated storage location is unavailable")
+    elif path.startswith("exports/"):
+        if not job.get("order"):
+            raise FileNotFoundError("No approved archive order")
+    elif path.startswith("simulations/"):
+        parts = path.split("/")
+        sim = next((s for s in job.get("simulations", []) if s["id"] == parts[1]), None)
+        if len(parts) != 3 or not sim or parts[2] not in sim.get("files", {}):
+            raise FileNotFoundError("Simulation artifact not found")
+    elif path.startswith("decodes/"):
+        parts = path.split("/")
+        if len(parts) < 3 or not any(d["id"] == parts[1] for d in job.get("decodes", [])):
+            raise FileNotFoundError("Decoder artifact not found")
     elif path == "certificate.html":
         if not job.get("certificate") or job["status"] == "recovering":
             raise FileNotFoundError("No current recovery report")
