@@ -1,18 +1,17 @@
 # LAZARUS — The AI DNA Archivist for Regulated Enterprises
 
 **Hackathon tracks:** Business & Enterprise (main) + Best use of deepagents by LangChain (special)
-**Built on:** Erbgut (HackMIT 2026), https://github.com/timarnoldev/hackmit2026 and
-https://plume.hackmit.org/project/mwrat-butaa-qmvaa-aebuw, used unmodified in `vendor/hackmit2026-main`.
+**Codec:** bundled source; authorship and licensing details are in the main README.
 
 ---
 
 ## 1. The idea in one paragraph
 
 Lazarus is an AI agent that does the job of a company's DNA-archive engineer. A company hands it files
-it must keep for decades, plus a retention policy. Lazarus plans the archive, runs real Erbgut DNA codec
+it must keep for decades, plus a retention policy. Lazarus plans the archive, runs real the bundled codec DNA codec
 experiments to choose the cheapest encoding that still recovers the file, attacks its own design to find
 weaknesses, asks a human to approve the cost, produces a vendor-ready DNA synthesis order plus a
-self-describing manifest, and later runs a verified "Year 2076" recovery drill using Erbgut's trained
+self-describing manifest, and later runs a verified "Year 2076" recovery drill using the bundled codec’s trained
 neural-network decoder. The product it sells is a **Recoverability Certificate**: evidence for a
 compliance officer that the archive can actually be read back.
 
@@ -28,7 +27,7 @@ compliance officer that the archive can actually be read back.
   2. tune the codec to the vendor's sequencing technology and the time horizon,
   3. produce a synthesis order,
   4. prove decades later that it decodes, even if the original software is gone.
-- Erbgut solves (2): "given my budget, sequencing tech and storage time, which encoding and how much
+- the bundled codec solves (2): "given my budget, sequencing tech and storage time, which encoding and how much
   redundancy?" Lazarus wraps that into an autonomous agent that does (1) to (4) and outputs audit
   evidence.
 - **Business model:** a per-archive certification fee plus an annual subscription for recurring
@@ -43,14 +42,14 @@ compliance officer that the archive can actually be read back.
    the DNA tier. Anything else gets the recommendation "keep this on Glacier or tape" (honest tiering).
 3. **Prepare.** For each file: compress with zstd, encrypt with AES-256-GCM (the customer holds the key,
    it never goes into DNA), record the SHA-256 of the original, and split into pools of at most about
-   16 KB (Erbgut was tested on 20 KB files, and small pools keep encoding fast).
-4. **Codec design** (Codec Engineer subagent). Build a custom Erbgut `SituationProfile` from the policy
+   16 KB (the bundled codec was tested on 20 KB files, and small pools keep encoding fast).
+4. **Codec design** (Codec Engineer subagent). Build a custom the bundled codec `SituationProfile` from the policy
    (`storage_years` = retention, `decay_per_year` from tech and horizon). Grid-search `EncoderSettings`
-   (redundancy 0.1 to 0.6, strand length 110 or 150, homopolymer and GC rules on or off) using Erbgut's
-   `recovery_trials` on train seeds. Score cost with Erbgut's cost model (bits per base, $/MB write,
+   (redundancy 0.1 to 0.6, strand length 110 or 150, homopolymer and GC rules on or off) using the bundled codec’s
+   `recovery_trials` on train seeds. Score cost with the bundled codec’s cost model (bits per base, $/MB write,
    $/MB read). Pick the cheapest setting that meets the recovery target.
 5. **Red team** (Adversary subagent). Re-test the chosen setting under conditions it was **not** tuned
-   on: Erbgut's Simulator B (a structurally different channel), double decay, lower read coverage, and
+   on: the bundled codec’s Simulator B (a structurally different channel), double decay, lower read coverage, and
    loss of a whole vault. If it fails, it reports back and the supervisor revises the design (more
    redundancy, or spreading strands across vaults so any K of N vaults are enough). This repeats until
    it passes. This fail, revise and retest loop is the visible "the agent is thinking" moment in the demo.
@@ -64,7 +63,7 @@ compliance officer that the archive can actually be read back.
    bootstrap spec to read the manifest strands, and the manifest tells you how to read everything else.
 8. **Recovery drill** (Recovery subagent). "Year 2076, every server is gone." Delete local originals
    and metadata. Keep only the vault strand files and the bootstrap spec. Simulate sequencing, decode the
-   manifest first, then decode the data with Erbgut's CNN `PolishDecoder` side by side with the
+   manifest first, then decode the data with the bundled codec’s CNN `PolishDecoder` side by side with the
    `MajorityVoteDecoder` baseline. Run `recover`, decrypt, decompress, check SHA-256. If it fails, try
    more reads or another vault. Never claim success without a hash match.
 9. **Certificate** (Compliance subagent). An HTML or PDF report: chosen setting, recovery rate over N
@@ -82,9 +81,9 @@ compliance officer that the archive can actually be read back.
   - tool calls into real computation
   - a human-in-the-loop interrupt before spending money
   - a fail, revise and retest loop driven by measured numbers rather than LLM guesses
-- **Deep learning:** Erbgut's 1D-CNN polisher (`checkpoints/polish/polish.pt`, trained on real
-  Microsoft Nanopore reads) runs in the recovery path. Erbgut's docs report 82.3% exact strands for the
-  polisher against 67.2% for the baseline at 6 reads on held-out real data. Optionally, Erbgut's risk
+- **Deep learning:** the bundled codec’s 1D-CNN polisher (`checkpoints/polish/polish.pt`, trained on real
+  Microsoft Nanopore reads) runs in the recovery path. the bundled codec’s docs report 82.3% exact strands for the
+  polisher against 67.2% for the baseline at 6 reads on held-out real data. Optionally, the bundled codec’s risk
   model (`KmerRiskModel`, quick to fit) can score candidate strands in the encoder.
 - **Rule:** the LLM never writes DNA letters itself. It only calls tools.
 
@@ -92,12 +91,12 @@ compliance officer that the archive can actually be read back.
 
 ```
 DNA encoder/                       repo root (git)
-  vendor/hackmit2026-main/         Erbgut, UNMODIFIED (dependency)
+  vendor/legacy-codec/         the bundled codec, UNMODIFIED (dependency)
   lazarus/                         Python backend
-    pyproject.toml                 uv; path dependency on ../vendor/hackmit2026-main (extra: train)
+    pyproject.toml                 uv; path dependency on ../vendor/legacy-codec (extra: train)
                                    + deepagents, langchain-anthropic, fastapi, uvicorn,
                                      sse-starlette, cryptography, zstandard
-    lazarus/dna.py                 thin wrapper over dnacodec (the ONLY file that imports dnacodec)
+    lazarus/dna.py                 thin wrapper over dna_codec (the ONLY file that imports dna_codec)
     lazarus/crypto.py              zstd + AES-GCM + sha256 + pool splitting
     lazarus/vaults.py              vault folders, strand placement across N vaults, destroy_vault()
     lazarus/manifest.py            bootstrap manifest encode/decode (fixed BOOTSTRAP_SETTINGS)
@@ -116,25 +115,25 @@ DNA encoder/                       repo root (git)
 LLM: Claude through `langchain-anthropic`, model `claude-sonnet-5-5`, key in env `ANTHROPIC_API_KEY`
 (never commit keys; use `.env` and add it to `.gitignore`).
 
-### Erbgut functions to reuse (do not rewrite them)
+### the bundled codec functions to reuse (do not rewrite them)
 
-| Need | Erbgut function | File |
+| Need | the bundled codec function | File |
 |---|---|---|
-| bytes to strands | `encode(data, EncoderSettings, scorer=None)` | `dnacodec/encoder.py:245` |
-| strands to bytes, or None | `recover(strands, meta)` | `dnacodec/encoder.py:414` |
-| settings and metadata types | `EncoderSettings`, `FileMeta`, `EncodedFile` | `dnacodec/types.py` |
-| channel profile | `load_profile`, `SituationProfile` | `dnacodec/profiles.py:94` |
-| sequencing noise | `simulate(strands, profile, seed)` | `dnacodec/simulator.py:228` |
-| red-team channel | `simulate` | `dnacodec/simulator_b.py:212` |
-| baseline decoder | `MajorityVoteDecoder()` | `dnacodec/baseline.py:146` |
-| CNN decoder | `PolishDecoder(checkpoint_path, device, workers)` | `dnacodec/model/polish.py:731` |
-| N-trial recovery rate | `recovery_trials`, `min_reads_at_target` | `dnacodec/evaluate.py:125,183` |
-| cost and density | `_density_and_costs`, `payload_bits_per_base` | `dnacodec/evaluate.py:251` |
-| train-only seeds | `train_seed()` | `dnacodec/seeds.py` |
-| risk scorer (optional) | `KmerRiskModel.fit`, `load_risk_model` | `dnacodec/risk.py:688,744` |
+| bytes to strands | `encode(data, EncoderSettings, scorer=None)` | `dna_codec/encoder.py:245` |
+| strands to bytes, or None | `recover(strands, meta)` | `dna_codec/encoder.py:414` |
+| settings and metadata types | `EncoderSettings`, `FileMeta`, `EncodedFile` | `dna_codec/types.py` |
+| channel profile | `load_profile`, `SituationProfile` | `dna_codec/profiles.py:94` |
+| sequencing noise | `simulate(strands, profile, seed)` | `dna_codec/simulator.py:228` |
+| red-team channel | `simulate` | `dna_codec/simulator_b.py:212` |
+| baseline decoder | `MajorityVoteDecoder()` | `dna_codec/baseline.py:146` |
+| CNN decoder | `PolishDecoder(checkpoint_path, device, workers)` | `dna_codec/model/polish.py:731` |
+| N-trial recovery rate | `recovery_trials`, `min_reads_at_target` | `dna_codec/evaluate.py:125,183` |
+| cost and density | `_density_and_costs`, `payload_bits_per_base` | `dna_codec/evaluate.py:251` |
+| train-only seeds | `train_seed()` | `dna_codec/seeds.py` |
+| risk scorer (optional) | `KmerRiskModel.fit`, `load_risk_model` | `dna_codec/risk.py:688,744` |
 
 Built-in profiles: `nanopore_budget`, `illumina_standard`, `illumina_archive_100y`
-(in `vendor/hackmit2026-main/profiles/`).
+(in `vendor/legacy-codec/profiles/`).
 
 ## 6. Team split: who does what
 
@@ -149,7 +148,7 @@ Built-in profiles: `nanopore_budget`, `illumina_standard`, `illumina_archive_100
 
 ### Lane A: DNA core (backend person, fastest laptop, ideally with an NVIDIA GPU)
 - `dna.py`, `crypto.py`, `vaults.py`, `manifest.py`, `tests/`.
-- Depends only on Erbgut.
+- Depends only on the bundled codec.
 - Done when: pool round-trip passes with both decoders; manifest decodes with no external metadata;
   recovery works with K of N vaults; a tampered strand makes `recover` return None (never wrong bytes).
 
@@ -167,12 +166,12 @@ Built-in profiles: `nanopore_budget`, `illumina_standard`, `illumina_archive_100
 
 ### Lane D: Story (optional 4th person)
 - Northstar Bio sample data, pitch deck, Devpost write-up, 3-minute demo script.
-- Email the Erbgut authors for permission (see section 10), write the attribution section.
+- Email the the bundled codec authors for permission (see section 10), write the attribution section.
 
 ### Timeline
 | Phase | What |
 |---|---|
-| 0 to 2 h | Lane 0 spike and contracts; others install tools and read the Erbgut README |
+| 0 to 2 h | Lane 0 spike and contracts; others install tools and read the the bundled codec README |
 | 2 h to ~50% | Lanes A, B, C, D in parallel on separate branches |
 | ~50% | Integration: B uses real A, C points at real B |
 | last 25% | Demo rehearsals end to end, bug fixes, pitch |
@@ -181,7 +180,7 @@ Built-in profiles: `nanopore_budget`, `illumina_standard`, `illumina_archive_100
 - One branch per lane (`lane-a-dna`, `lane-b-agent`, `lane-c-web`, `lane-d-story`). Merge to `main`
   through small PRs.
 - Stay inside your lane's files. Contracts change only with team agreement.
-- **Never edit `vendor/hackmit2026-main`.**
+- **Never edit `vendor/legacy-codec`.**
 - If you use an AI coding agent, give it this file and say: "You own Lane X. Don't touch other lanes'
   files. Follow sections 7 and 8 exactly."
 
@@ -189,10 +188,10 @@ Built-in profiles: `nanopore_budget`, `illumina_standard`, `illumina_archive_100
 ```bash
 # needs: git, Python 3.11+, uv, Node 20+
 git clone <our repo>
-cd lazarus && uv sync          # pulls Erbgut as a path dependency, plus torch
+cd lazarus && uv sync          # pulls the bundled codec as a path dependency, plus torch
 cd ../web && npm install
 cp .env.example .env           # put ANTHROPIC_API_KEY here, never commit it
-cd ../vendor/hackmit2026-main && uv run pytest -q   # Erbgut's own tests should pass
+cd ../vendor/legacy-codec && uv run pytest -q   # the bundled codec’s own tests should pass
 ```
 
 ## 7. Contract: agent tools
@@ -243,25 +242,22 @@ REST endpoints: `POST /jobs` (multipart files + policy JSON), `POST /jobs/{id}/a
 7. Recovery from 2 of 3 vaults, CNN vs baseline side by side.
 8. The PDF opens, SHA-256 matches, the certificate appears.
 
-Show measured rates only, and never pick a lucky seed. This is Erbgut's own honesty rule
-(see the `dnacodec/demo.py` docstring).
+Show measured rates only, and never pick a lucky seed. This is the bundled codec’s own honesty rule
+(see the `dna_codec/demo.py` docstring).
 
 ## 10. Risks and must-dos
 
-- **License:** the Erbgut repo has **no LICENSE file** (checked). By default that means all rights
-  reserved. Before submitting: ask the authors (GitHub `timarnoldev`) for permission, credit them on
-  Devpost and the README, keep Erbgut unmodified under `vendor/` as a dependency, and state clearly what
-  Lazarus adds. Check HackPrinceton's rules on pre-existing code.
-- **Speed:** Erbgut runs 300 trials on a GPU machine. We use 20 to 50 trials on train seeds, run them in
+- **License:** see the main README for upstream authorship and unresolved redistribution permission.
+- **Speed:** the bundled codec runs 300 trials on a GPU machine. We use 20 to 50 trials on train seeds, run them in
   background threads and cache results per (pool, settings).
 - Never claim physical DNA synthesis. Label everything "simulated channel, calibrated on real reads".
-- Costs in Erbgut profiles are placeholders (`profiles.py:38` says so). Show them as "modeled" and let
+- Costs in the bundled codec profiles are placeholders (`profiles.py:38` says so). Show them as "modeled" and let
   the user edit them.
 - The encryption key never goes into the DNA manifest. The manifest stores a key ID only.
 
 ## 11. How we know it works
 
-- Erbgut's own tests still pass: `cd vendor/hackmit2026-main && uv run pytest -q`.
+- the bundled codec’s own tests still pass: `cd vendor/legacy-codec && uv run pytest -q`.
 - `lazarus/tests` pass: pool round-trip with both decoders, manifest bootstrap with no external
   metadata, K-of-N vault recovery, tampered strand returns None, encrypt/decrypt hash match.
 - A headless agent run on sample data produces the order, manifest strands and certificate, the

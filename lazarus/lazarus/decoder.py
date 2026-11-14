@@ -8,7 +8,7 @@ It never opens an archive's uploads, staging pools, restored files, the clean ex
 the file the user chose to decode) or simulator ground truth.
 
 Pipeline: parse -> group reads by sample label (tube/pool) -> decode the bootstrap manifest from the
-MANIFEST reads -> per pool: reference-free clustering -> consensus (majority vote and/or Erbgut's CNN
+MANIFEST reads -> per pool: reference-free clustering -> consensus (majority vote and/or the bundled codec’s CNN
 PolishDecoder) -> Fountain recovery -> reassemble the encrypted stream -> AES-256-GCM decrypt ->
 zstd decompress -> SHA-256 check against the manifest (and the recovery bundle if supplied).
 
@@ -37,7 +37,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from . import clustering, crypto, dna, fasta, manifest, store, vaults
-from dnacodec.encoder import _Layout  # strand CRC check only, for reporting valid consensus strands
+from dna_codec.encoder import _Layout  # strand CRC check only, for reporting valid consensus strands
 
 DECODERS = ("baseline", "polish")
 KEYFILE_FORMAT = "lazarus-keyfile-v1"
@@ -417,7 +417,7 @@ processing time {e(rec['seconds'])}s</p>
 <table><tr><th>Decoder</th><th>Verdict</th><th>Manifest</th><th>Pools recovered</th><th>Valid strands</th><th>Time</th></tr>{decs}</table>
 <table><tr><th>File</th><th>Bytes</th><th>Expected SHA-256</th><th>Actual SHA-256</th><th>Decoder</th><th>Result</th></tr>{files}</table>
 <h2>Final verdict: {e(r['verdict'])}</h2>{trial_html}
-<p><small>Codec, simulators, majority-vote and CNN decoders: Erbgut (HackMIT 2026). Read clustering: Lazarus.
+<p><small>Codec, simulators, majority-vote and CNN decoders: the bundled codec (HackMIT 2026). Read clustering: Lazarus.
 Success requires byte-exact SHA-256 equality of reconstructed files; similar-looking DNA is never counted as recovery.</small></p>
 </body></html>"""
 

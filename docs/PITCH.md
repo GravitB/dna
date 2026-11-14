@@ -34,13 +34,13 @@ Backup: if the Wi-Fi or the API fails, run the same flow in Autopilot mode. It u
 with no LLM and is labeled as scripted.
 
 ## Judge Q&A
-- *Is the DNA real?* Synthesis and sequencing are simulated with Erbgut's channel model, which is
+- *Is the DNA real?* Synthesis and sequencing are simulated with the bundled codec’s channel model, which is
   calibrated on real Nanopore reads. The orders are real FASTA that a vendor accepts.
 - *Is DNA cheaper than S3?* No. Lazarus only uses DNA for cold, immutable, decades-long records, and
   says so.
-- *Where is the deep learning?* Erbgut's CNN decoder, trained on real reads, runs in every drill next
+- *Where is the deep learning?* the bundled codec’s CNN decoder, trained on real reads, runs in every drill next
   to the classic decoder.
-- *What is yours vs Erbgut's?* Erbgut provides the codec, the simulators and the decoders, used
+- *What is yours vs the bundled codec’s?* the bundled codec provides the codec, the simulators and the decoders, used
   unchanged. Lazarus is the agent, the workflow, red teaming, encryption, vault placement, the bootstrap
   manifest, the drill, the certificate and the app.
 - *Why a deep agent?* Planning, isolated subagents, a virtual filesystem, human approval before spending
@@ -52,7 +52,7 @@ with no LLM and is labeled as scripted.
 recovery after deleting the originals.
 **How we built it:** LangChain deepagents with Claude, four subagents, human-in-the-loop interrupts,
 FastAPI with server-sent events, and React with Recharts. The DNA codec, simulators and CNN decoder
-come from Erbgut (HackMIT 2026), credited and unmodified.
+come from the bundled codec, credited in the main README and unmodified.
 **Challenges:** Small Fountain-coded pools are fragile. Packing every file into one balanced stream and
 attacking the whole archive (not just one pool) fixed recovery after losing a vault site.
 **What's next:** Real vendor APIs, wet-lab validation, and scheduled drills as a subscription.

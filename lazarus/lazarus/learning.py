@@ -1,4 +1,4 @@
-"""Isolated Erbgut research worker; learned codecs are experimental, never silently deployed."""
+"""Isolated the bundled codec research worker; learned codecs are experimental, never silently deployed."""
 from __future__ import annotations
 
 import json
@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def experiment(request: dict, output: Path) -> dict:
-    from dnacodec import results
-    from dnacodec.loop import LoopConfig, run_loop
+    from dna_codec import results
+    from dna_codec.loop import LoopConfig, run_loop
     from . import dna
 
     output.mkdir(parents=True, exist_ok=True)
@@ -22,7 +22,7 @@ def experiment(request: dict, output: Path) -> dict:
                       store_root=output / "codecs")
     report = {
         "status": "completed", "quick": config.quick,
-        "scope": "Erbgut fixed research test file; not validation of the customer archive",
+        "scope": "the bundled codec fixed research test file; not validation of the customer archive",
         "decoder": "polish", "decoder_retrained": False,
         "learned_risk_selection": True, "deployed_to_archive": False,
         "result": result.to_dict(),

@@ -4,7 +4,7 @@
 - subagents with isolated context: codec-engineer, adversary, recovery-engineer, compliance
 - virtual filesystem: the agents keep design notes in /design_notes.md
 - human in the loop: place_synthesis_order and destroy_primary pause for approval
-- every number comes from tools that run the real Erbgut codec
+- every number comes from tools that run the real the bundled codec codec
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ Your job: turn the customer's long-retention files into a DNA archive with measu
 prove it with a disaster drill and issue a Simulation Recovery Report.
 
 You never invent numbers. Every recovery rate, cost or verdict must come from a tool result.
-You never write DNA letters yourself; tools run the real Erbgut codec (Fountain encoder, calibrated
+You never write DNA letters yourself; tools run the real the bundled codec codec (Fountain encoder, calibrated
 sequencing simulator, majority-vote baseline and a CNN decoder trained on real Nanopore reads).
 
 Workflow (write it as todos first with write_todos, keep them updated):
@@ -68,7 +68,7 @@ Always pass job_id to tools and include it in every subagent task description.
 Keep chat messages short: one or two sentences explaining what you are doing and why."""
 
 CODEC_PROMPT = """You are the Codec Engineer. You design the DNA encoding for one archive using the real
-Erbgut codec through tools. Method:
+the bundled codec codec through tools. Method:
 1. build_profile to see the channel (error rates, strand loss after the storage period).
 2. run_codec_sweep with decoder='baseline', trials 4-6, redundancies like [0.3, 0.6, 1.0] and 1-3
    coverages around the planned one, to map the recovery/cost frontier and compare rule combinations.
@@ -124,10 +124,10 @@ def build_agent(model: str | None = None, analysis_preset: str = "standard", can
 
     T = {f.__name__: _t(f) for f in tools.ALL_TOOLS}
     subagents = [
-        {"name": "codec-researcher", "description": "Runs real Erbgut risk-learning experiments and critically compares learned encoding with the same-decoder default.",
-         "system_prompt": "Call prepare_learned_model once. Honor standard, evaluated or fresh encoding choice. If it fails, stop and explain the next action. Report actual evaluation scope; the CNN decoder is frozen. Attribute training to Erbgut. Save factual provenance to /learning-evidence.md.",
+        {"name": "codec-researcher", "description": "Runs real the bundled codec risk-learning experiments and critically compares learned encoding with the same-decoder default.",
+         "system_prompt": "Call prepare_learned_model once. Honor standard, evaluated or fresh encoding choice. If it fails, stop and explain the next action. Report actual evaluation scope; the CNN decoder is frozen. Attribute training to the bundled codec. Save factual provenance to /learning-evidence.md.",
          "tools": [T["prepare_learned_model"]]},
-        {"name": "codec-engineer", "description": "Designs the DNA encoding: runs real Erbgut codec sweeps and experiments, returns the cheapest design meeting the target with evidence.",
+        {"name": "codec-engineer", "description": "Designs the DNA encoding: runs real the bundled codec codec sweeps and experiments, returns the cheapest design meeting the target with evidence.",
          "system_prompt": CODEC_PROMPT + " For quick_demo call run_quick_design once and return its exact settings; do not run a separate search.", "tools": [T["compare_archive_candidates"], T["run_quick_design"], T["build_profile"], T["run_codec_sweep"], T["run_codec_experiment"], T["estimate_cost"]]},
         {"name": "adversary", "description": "Red-teams a proposed design under vault loss, a different sequencing channel, double decay and low coverage.",
          "system_prompt": ADVERSARY_PROMPT + " For quick_demo use read_job_log to independently review the four measured tests produced by run_quick_design. Do not repeat those tests.", "tools": [T["validate_archive_candidate"], T["stress_test"], T["read_job_log"]]},

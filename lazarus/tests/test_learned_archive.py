@@ -23,7 +23,7 @@ def prepared(tmp_path, monkeypatch):
 
 @pytest.fixture
 def exact_channel(monkeypatch):
-    from dnacodec import simulator, simulator_b
+    from dna_codec import simulator, simulator_b
     monkeypatch.setattr(simulator, 'simulate', lambda strands, *a: [[s] for s in strands])
     monkeypatch.setattr(simulator_b, 'simulate', lambda strands, *a: [[s] for s in strands])
     monkeypatch.setattr(dna, 'decode_clusters', lambda clusters, *a: [c[0] if c else None for c in clusters])
@@ -92,7 +92,7 @@ def test_failed_final_evidence_cannot_be_rerolled(prepared, monkeypatch):
 
 
 def fitted_model():
-    from dnacodec.risk import RiskModel
+    from dna_codec.risk import RiskModel
     # Fast real fit exercises safe serialization. Full experiment is separately recorded.
     model = RiskModel(channels=8, n_blocks=1, epochs=1, device='cpu')
     return model.fit(['ACGT' * 28, 'A' * 110, 'G' * 110, 'AT' * 55], np.array([0.,1.,.8,.3]))

@@ -374,35 +374,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dnacodec"
-version = "0.1.0"
-source = { editable = "../vendor/hackmit2026-main" }
-dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "rapidfuzz" },
-]
-
-[package.optional-dependencies]
-train = [
-    { name = "torch" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "pandas", marker = "extra == 'dashboard'", specifier = ">=2.2" },
-    { name = "plotly", marker = "extra == 'dashboard'", specifier = ">=5.20" },
-    { name = "rapidfuzz", specifier = ">=3.6" },
-    { name = "streamlit", marker = "extra == 'dashboard'", specifier = ">=1.36" },
-    { name = "torch", marker = "extra == 'train'", specifier = ">=2.3" },
-]
-provides-extras = ["train", "dashboard"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
-
-[[package]]
 name = "docstring-parser"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -847,14 +818,17 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "deepagents" },
-    { name = "dnacodec", extra = ["train"] },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langchain-anthropic" },
     { name = "langchain-google-genai" },
     { name = "langgraph" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "rapidfuzz" },
+    { name = "torch" },
     { name = "uvicorn" },
     { name = "zstandard" },
 ]
@@ -871,14 +845,16 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=42" },
     { name = "deepagents", specifier = ">=0.2" },
-    { name = "dnacodec", extras = ["train"], editable = "../vendor/hackmit2026-main" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "langchain-anthropic", specifier = ">=0.3" },
     { name = "langchain-google-genai", specifier = ">=4" },
     { name = "langgraph", specifier = ">=0.4" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "rapidfuzz", specifier = ">=3.6" },
+    { name = "torch", specifier = ">=2.3" },
     { name = "uvicorn", specifier = ">=0.30" },
     { name = "zstandard", specifier = ">=0.22" },
 ]

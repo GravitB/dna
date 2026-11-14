@@ -107,7 +107,7 @@ describe("business archive workspace", () => {
       (screen.getByLabelText(/How many years should we simulate\?/) as HTMLInputElement)
         .value,
     ).toBe("25");
-    fireEvent.change(screen.getByLabelText("Encoding approach"), {target:{value:"standard"}});
+    fireEvent.change(screen.getByLabelText("Design method"), {target:{value:"standard"}});
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Analyze archive" }));
     await waitFor(() =>

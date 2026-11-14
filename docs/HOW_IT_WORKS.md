@@ -48,7 +48,7 @@ All encrypted files are joined into one byte stream and cut into equal pools of 
 pool is one batch of DNA (in a lab: one tube or primer pair). Tiny pools turned out to be fragile in
 testing, so equal sizes matter.
 
-### Step 4: The encoder (Erbgut's DNA Fountain code)
+### Step 4: The encoder (the bundled codec’s DNA Fountain code)
 
 **a) 2 bits per letter.** A=00, C=01, G=10, T=11, so one byte is four letters:
 `'H' = 0x48 = 01 00 10 00 → C A G A`. In practice the strands look nothing like the file, because the
@@ -89,7 +89,7 @@ the target.
 
 The **adversary** subagent then attacks that design four ways:
 - destroying one vault site
-- a different sequencer model (Erbgut's Simulator B, which the design was not tuned on)
+- a different sequencer model (the bundled codec’s Simulator B, which the design was not tuned on)
 - twice the storage time
 - 60% of the planned reads
 
@@ -114,7 +114,7 @@ synthesizes the pool, the DNA is dried or encapsulated and stored in the vaults,
 sequencer reads it.
 
 ### Step 8: Sequencing
-A sequencer returns many noisy copies (reads) of each strand. We simulate it with Erbgut's channel
+A sequencer returns many noisy copies (reads) of each strand. We simulate it with the bundled codec’s channel
 model, calibrated on real Nanopore data. Per letter, it applies roughly 1.5% substitutions, 1.9%
 insertions and 2.2% deletions, more inside letter runs and at strand ends. It also loses some strands
 entirely, adds extra loss per year of storage, and gives about 10 reads per strand. In our simulation
@@ -124,9 +124,9 @@ the reads arrive already grouped per strand; a real lab first clusters them by s
 **a) Majority vote.** Pick the read closest to all the others as a draft, align every read to it (the
 alignment handles insertions and deletions), vote letter by letter, and repeat 3 times.
 
-**b) CNN polisher (deep learning).** Erbgut's 1D convolutional network reads the vote counts at each
+**b) CNN polisher (deep learning).** the bundled codec’s 1D convolutional network reads the vote counts at each
 position and its neighbors, predicts where the vote is wrong and fixes it. It was trained on real
-Microsoft Nanopore reads, and Erbgut reports 82% vs 67% exactly-correct strands at 6 reads. Lazarus
+Microsoft Nanopore reads, and the bundled codec reports 82% vs 67% exactly-correct strands at 6 reads. Lazarus
 runs both decoders on the same reads and reports both; in our runs the CNN recovered a file the classic
 decoder lost.
 
@@ -163,11 +163,11 @@ custody of every agent action.
 
 ## 5. Honest limits
 - DNA synthesis currently costs orders of magnitude more per MB than cloud storage. Lazarus is for
-  small, critical, very-long-retention records. Costs shown are Erbgut placeholder prices labeled
+  small, critical, very-long-retention records. Costs shown are the bundled codec placeholder prices labeled
   "modeled".
 - Physical DNA is simulated. The channel model is calibrated on real reads; storage decay is
   extrapolated.
 - Trial counts are small (4 to 8 per point) and use train-only seeds. We never pick lucky seeds.
-- Erbgut built the encoder, the simulators and the decoders. Lazarus built the enterprise workflow
+- the bundled codec built the encoder, the simulators and the decoders. Lazarus built the enterprise workflow
   around them: the agent team, red teaming and redesign, encryption, multi-site placement, the DNA
   manifest, the disaster drill, the certificate and the app.

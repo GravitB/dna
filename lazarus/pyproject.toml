@@ -1,10 +1,12 @@
 [project]
 name = "lazarus"
 version = "0.1.0"
-description = "Lazarus: AI DNA archivist for regulated enterprises, built on the Erbgut codec"
+description = "Lazarus: AI DNA archivist for regulated enterprises"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "dnacodec[train]",
+    "numpy>=1.26",
+    "rapidfuzz>=3.6",
+    "torch>=2.3",
     "deepagents>=0.2",
     "langchain-anthropic>=0.3",
     "langchain-google-genai>=4",
@@ -18,9 +20,6 @@ dependencies = [
     "httpx>=0.28",
 ]
 
-[tool.uv.sources]
-dnacodec = { path = "../vendor/hackmit2026-main", editable = true }
-
 [dependency-groups]
 dev = ["pytest>=8"]
 cloud-setup = ["psycopg[binary]>=3.2"]
@@ -33,7 +32,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lazarus"]
+packages = ["lazarus", "dna_codec"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"profiles" = "profiles"
+"checkpoints" = "checkpoints"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

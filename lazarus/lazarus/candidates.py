@@ -22,7 +22,7 @@ def create(job_id, settings, scorer=None, model_ref=None):
     pools = {}
     for pid in sorted(job["pools"]):
         data = (store.job_dir(job_id) / "staging" / f"{pid}.bin").read_bytes()
-        from dnacodec.encoder import encode
+        from dna_codec.encoder import encode
         encoded = encode(data, settings, scorer=scorer)
         pools[pid] = {"strands": encoded.strands, "meta": dna.meta_to_dict(encoded.meta),
                       "payload_sha256": hashlib.sha256(data).hexdigest()}
@@ -63,8 +63,8 @@ def load(job_id, candidate_id):
 
 def validate(job_id, candidate_id, trials=4, *, heldout=True):
     """Exercise frozen emitted strands; hold-out seeds are reserved for this final check."""
-    from dnacodec.seeds import heldout_seeds, train_seed
-    from dnacodec import simulator, simulator_b
+    from dna_codec.seeds import heldout_seeds, train_seed
+    from dna_codec import simulator, simulator_b
     from dataclasses import replace
     candidate = load(job_id, candidate_id)
     policy = candidate['policy']

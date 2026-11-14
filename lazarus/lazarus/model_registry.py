@@ -11,12 +11,12 @@ def digest(data):
 
 
 def compatibility(policy):
-    engine = dna.ERBGUT_DIR / 'dnacodec'
+    engine = dna.CODEC_DIR / 'dna_codec'
     source = b''.join(p.read_bytes() for p in sorted(engine.rglob('*.py')))
     return json.loads(json.dumps({'profile': dna.profile_to_dict(dna.make_profile(policy['tech'], policy['retention_years'], policy['coverage'])),
             'strand_length': 110, 'decoder': 'polish',
             'decoder_sha256': digest(dna.POLISH_CHECKPOINT.read_bytes()),
-            'engine_sha256': digest(source), 'format': 'erbgut-risk-cnn-v1'}))
+            'engine_sha256': digest(source), 'format': 'bundled codec-risk-cnn-v1'}))
 
 
 def register(job_id, model, evaluation):
@@ -29,7 +29,7 @@ def register(job_id, model, evaluation):
     model_id = digest(data)
     row = {'id': model_id, 'job_id': job_id, 'path': f'learning/models/{model_id}.pt',
            'compatibility': compatibility(store.load(job_id)['policy']),
-           'evaluation': evaluation, 'created': store.now(), 'source': 'server-generated Erbgut RiskModel'}
+           'evaluation': evaluation, 'created': store.now(), 'source': 'server-generated the bundled codec RiskModel'}
     artifacts.publish(job_id, row['path'], data)
     store.update(job_id, lambda j: j.setdefault('models', {}).update({model_id: row}))
     return row
@@ -37,7 +37,7 @@ def register(job_id, model, evaluation):
 
 def load(row, policy):
     import torch
-    from dnacodec.risk import RiskModel
+    from dna_codec.risk import RiskModel
     if row['compatibility'] != compatibility(policy):
         raise ValueError('Learned model is incompatible with this channel or decoder')
     # Resolve provenance from server state, never accept a client-provided path or model payload.

@@ -1,0 +1,86 @@
+"""Learned decoders.
+
+The decoder used by every result in this repository is the polisher. The from-scratch
+transformer lost to the classic baseline and is kept unused, as the record behind that
+decision (docs/MODELS.md section 3).
+
+In use:
+- polish.py: PolishDecoder. Keeps the majority vote draft and its vote columns and corrects
+  them with a 0.8M parameter dilated 1D CNN (keep/substitute/delete per position, insertion
+  per gap, deletions paired with insertions so the output is exactly strand_length).
+  scripts/train_polish.py trains it in about 15 minutes on the GX10, including data
+  generation.
+- data.py: training batches. ClusterPool (real train splits, or clusters from the loop),
+  SimSource (random strands through dna_codec.simulator.simulate() with random profiles over
+  a wide range of error rates, seeds via train_seed()), MixedSource. Coverage augmentation:
+  every training cluster keeps a random 1..16 reads, with extra weight on 1..6.
+- benchmark.py: final held-out table for a checkpoint next to the baseline, same
+  subsampling seeds as scripts/eval_real.py. Never used for selection.
+
+Kept for the record, not used by any result:
+- net.py: ConsensusNet. Per-read transformer encoder (token + position + read-index
+  embeddings), then strand_length learned output queries (+ shared position code +
+  strand-length embedding). Positions are anchored at both ends (sinusoids of the index from
+  the start and from the end of each read / of the strand), which fixed a plateau where
+  accuracy decayed along the strand from indel drift. Output queries go through transformer
+  decoder layers that self-attend over output positions and cross-attend to every read token
+  (Perceiver style). Logits over ACGT per position. Strands up to 160 bases, up to 16 reads,
+  padding and empty reads masked. Presets: tiny (0.2M, smoke), small (3.8M), base (9.6M,
+  default), large (~21M).
+- train.py: CLI for ConsensusNet. --smoke memorization check, full runs with
+  --source real|sim|mixed. Validation carved from the real TRAIN split picks best.pt; the
+  real held-out split is only logged, at 2/4/6/10/16 reads.
+- decoder.py: TransformerDecoder(checkpoint_path) implementing dna_codec.types.Decoder.
+- finetune.py: finetune(checkpoint_path, clusters, references, steps, out_path) -> Path.
+  Only pass training clusters (train seeds or real train splits).
+
+Import the submodules directly (dna_codec.model.decoder etc.); this package does not import
+torch on its own.
+
+GPU run
+-------
+Machine: ASUS Ascent GX10 (NVIDIA GB10, aarch64 Linux, 128 GB unified memory, 20 cores).
+bf16 autocast and TF32 switch on automatically on cuda. Simulation runs on the fly in
+DataLoader workers (a fresh random channel per batch, about 15 ms per batch of 128 on one
+core), so no precomputed dataset is needed; --workers 8 keeps the GPU fed.
+
+    # Run from the project source checkout.
+    uv sync --extra train
+    scripts/download_data.sh --full
+
+    # 0) Does torch see the GPU?
+    uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0)); x = torch.randn(4096, 4096, device='cuda'); print((x @ x).sum().item())"
+    # If False or an error (PyPI aarch64 wheels can be CPU-only), install the CUDA wheel:
+    #   uv pip install --reinstall torch --index-url https://download.pytorch.org/whl/cu130
+    #   and from then on use "uv run --no-sync ..." so uv does not put the CPU wheel back.
+    # Fallback: NVIDIA's NGC PyTorch container, which supports GB10:
+    #   docker run --gpus all -it --rm --ipc=host -v $PWD:/work -w /work nvcr.io/nvidia/pytorch:25.09-py3
+    #   pip install numpy rapidfuzz pytest && pip install --no-deps -e .   # then run without "uv run"
+
+    uv run pytest -q
+
+    # 1) Train the polisher, the decoder behind every result. About 15 minutes end to end.
+    uv run python scripts/train_polish.py --sim-clusters 400000 --real-passes 24 \\
+        --workers 8 --steps 10000 --batch-size 512 --low-prob 0.75 --low-max 4 \\
+        --run-name polish_low
+
+    # 2) Final numbers next to the baseline, same protocol and seeds as scripts/eval_real.py:
+    uv run python scripts/eval_real.py                  # baseline column, once
+    uv run python -m dna_codec.model.benchmark --polish checkpoints/polish_low/polish.pt
+
+The from-scratch transformer is trained through the same CLI and is not used by any result:
+
+    uv run python -m dna_codec.model.train --smoke          # must end with "smoke PASSED"
+    nohup uv run python -m dna_codec.model.train --source sim --model base \\
+        --steps 100000 --batch-size 128 --workers 8 --run-name sim_base > sim_base.out 2>&1 &
+    nohup uv run python -m dna_codec.model.train --source mixed --p-real 0.7 \\
+        --init checkpoints/sim_base/best.pt --lr 1e-4 --warmup 500 \\
+        --steps 20000 --batch-size 128 --workers 8 --run-name mixed_ft > mixed_ft.out 2>&1 &
+
+    tail -f checkpoints/<run-name>/train.log   # eval every 1000 steps: val + held-out at 2/4/6/10/16 reads
+    # crash or preemption: rerun the same command plus --resume checkpoints/<run-name>/last.pt
+
+Each run writes checkpoints/<run-name>/{train.log, metrics.jsonl, best.pt, last.pt,
+step<N>.pt}. best.pt (best on the validation subset of the TRAIN split) is the checkpoint
+for TransformerDecoder. If step time is too slow for the time budget, use --model small.
+"""

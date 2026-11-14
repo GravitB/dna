@@ -12,7 +12,7 @@ import os
 import zstandard
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-POOL_BYTES = 12_000  # bytes per oligo pool; Erbgut was tested on ~20 KB files, small pools encode fast
+POOL_BYTES = 12_000  # bytes per oligo pool; the bundled codec was tested on ~20 KB files, small pools encode fast
 NONCE_BYTES = 12
 
 

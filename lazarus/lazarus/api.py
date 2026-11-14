@@ -148,7 +148,26 @@ def jobs():
             agent.RUNS[j["id"]].pending if j["id"] in agent.RUNS else None,
         )
         for j in store.list_jobs()
+        if not store.load(j["id"]).get("deleted_at")
     ]
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str):
+    with job_operation(job_id):
+        job = store.load(job_id)
+        run = agent.RUNS.get(job_id)
+        if (run and run.thread.is_alive()) or job.get("status") == "recovering" or job.get("learning_state", {}).get("status") in ("running", "canceling") or any(s.get("status") == "running" for s in job.get("simulations", [])):
+            raise HTTPException(409, "Wait for the current archive workflow to finish before deleting it.")
+        store.update(job_id, lambda j: j.update(deleted_at=store.now()))
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/restore")
+def restore_job(job_id: str):
+    with job_operation(job_id):
+        store.update(job_id, lambda j: j.pop("deleted_at", None))
+    return {"ok": True}
 
 
 @app.post("/api/jobs")
@@ -613,7 +632,7 @@ def decoder_capabilities():
     ok, why = decoder.polish_status()
     return {
         "decoders": {"baseline": {"available": True, "label": "Majority vote (baseline)"},
-                     "polish": {"available": ok, "reason": why, "label": "Erbgut CNN PolishDecoder"}},
+                     "polish": {"available": ok, "reason": why, "label": "the bundled codec CNN PolishDecoder"}},
         "max_fasta_bytes": fasta.MAX_FASTA_BYTES,
         "formats": ["FASTA", "FASTQ (quality scores ignored)"],
         "archives": [

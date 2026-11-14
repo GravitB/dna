@@ -103,7 +103,7 @@ Requirements: Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, gi
 ```bash
 git clone https://github.com/GravitB/dna.git && cd dna
 cp .env.example .env            # add GOOGLE_API_KEY or ANTHROPIC_API_KEY for the deep agent
-scripts/run.sh                  # fetches Erbgut, installs, builds the UI, serves on :8000
+scripts/run.sh                  # checks bundled Erbgut, installs, builds the UI, serves on :8000
 ```
 Open http://localhost:8000 for the homepage, or http://localhost:8000/app/ for the business workspace. The **Archives** page lists your archives and their latest recovery outcomes.
 Choose **Create archive** to upload your own records, or **Try sample archive** for fictional Northstar Bio files.
@@ -260,10 +260,13 @@ LAZARUS_TEAM_PLAN.md          original plan and team contracts
 ## Credits
 The DNA codec, both sequencing simulators, the baseline decoder and the CNN decoder are from
 **Erbgut** by the HackMIT 2026 team (https://github.com/timarnoldev/hackmit2026,
-https://plume.hackmit.org/project/mwrat-butaa-qmvaa-aebuw). Lazarus uses them unmodified as a
-dependency and does not redistribute them: `scripts/get_erbgut.sh` downloads Erbgut at a pinned commit.
+https://plume.hackmit.org/project/mwrat-butaa-qmvaa-aebuw). Lazarus includes their source directly as `lazarus/dna_codec`, with runtime assets in `lazarus/profiles` and `lazarus/checkpoints`.
 Erbgut's repository has no license file, so we are asking its authors for permission.
 
 What Lazarus adds: the enterprise workflow, the deepagents supervisor and subagents, archive-level red
 teaming with redesign, encryption and multi-site vault placement, the DNA-encoded bootstrap manifest,
 the disaster drill with SHA-256 verification, the certificate and chain of custody, and the web app.
+
+Bundled codec source: `lazarus/dna_codec`, from upstream revision `556924ab285980c5523a93871474ec773d32b7d9`. This contains the unchanged Python source, profiles and model checkpoint; hardware, datasets and the upstream dashboard are excluded. The codec is included in the Lazarus Python package, without a separate dnacodec dependency or download.
+
+The bundled upstream `dnacodec` package is named `dna_codec` locally for integration. This naming change does not change its original authorship.

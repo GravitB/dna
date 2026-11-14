@@ -1,4 +1,4 @@
-# Erbgut is a dependency without a license file; teammates download it themselves (see README)
+# Legacy external downloads; runtime source now lives in third_party/erbgut
 vendor/
 hackmit2026-main.zip
 scratch/

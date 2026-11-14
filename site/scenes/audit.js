@@ -2,7 +2,7 @@
  *
  * The point of this scene is that there is a *set* of settings we hand the
  * encoder, and we measure them. So the scene is a rack of the real knobs from
- * dnacodec/types.py `EncoderSettings`: strand length, redundancy, candidates
+ * dna_codec/types.py `EncoderSettings`: strand length, redundancy, candidates
  * per slot, and which scorer ranks those candidates. They are swept across
  * their range — the search — and then settle on the value the loop runs.
  *
