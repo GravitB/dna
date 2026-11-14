@@ -51,8 +51,8 @@ def write_vaults(
             for pool_id, i, s in items:
                 w.writerow([f"{pool_id}_{i:05d}", s, len(s)])
         written += [
-            str((d / "order.fasta").relative_to(job_dir)),
-            str((d / "order.csv").relative_to(job_dir)),
+            (d / "order.fasta").relative_to(job_dir).as_posix(),
+            (d / "order.csv").relative_to(job_dir).as_posix(),
         ]
     return written
 
