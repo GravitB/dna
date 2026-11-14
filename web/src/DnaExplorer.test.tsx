@@ -7,6 +7,18 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+vi.mock("./Helix3D", () => ({
+  default: (p: { sequence: string | null; duplex?: boolean; selected?: number | null; onSelect?: (i: number) => void }) => (
+    <div
+      data-testid="helix"
+      data-sequence={p.sequence ?? ""}
+      data-duplex={String(p.duplex)}
+      data-selected={p.selected ?? ""}
+    >
+      <button data-testid="pick-0" onClick={() => p.onSelect?.(0)} />
+    </div>
+  ),
+}));
 import DnaExplorer from "./DnaExplorer";
 import { parseDnaFasta, complement } from "./dna";
 import type { Archive } from "./types";
@@ -51,11 +63,14 @@ describe("DNA parsing", () => {
 describe("archive DNA explorer", () => {
   async function open() {
     render(<DnaExplorer job={job} />);
-    fireEvent.click(screen.getByRole("button", { name: "Explore your DNA" }));
     await screen.findByText("Encoded strand #1");
+    await screen.findByTestId("helix");
   }
-  it("uses saved FASTA, skips unavailable locations, and navigates real strands", async () => {
+  const helix = () => screen.getByTestId("helix");
+  const ready = () => screen.findByTestId("helix");
+  it("opens on approved archives, uses saved FASTA, skips unavailable locations, and navigates real strands", async () => {
     await open();
+    expect(screen.queryByRole("button", { name: "Explore your DNA" })).toBeNull();
     expect(fetch).toHaveBeenCalledWith(
       "/api/jobs/archive-one/files/vaults/vault-1/order.fasta",
       expect.anything(),
@@ -73,132 +88,38 @@ describe("archive DNA explorer", () => {
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Base 1: A" })).toBeTruthy();
   });
-  it("sends the exact selected sequence only to the local viewer after its handshake", async () => {
+  it("renders the exact saved bases in 3D and toggles the generated complement", async () => {
     await open();
-    const frame = screen.getByTitle(
-      "3D DNA viewer powered by oxView",
-    ) as HTMLIFrameElement;
-    const spy = vi.spyOn(frame.contentWindow!, "postMessage");
-    act(() =>
-      window.dispatchEvent(
-        new MessageEvent("message", {
-          origin: location.origin,
-          source: frame.contentWindow,
-          data: { type: "lazarus-oxview-ready" },
-        }),
-      ),
-    );
-    await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "lazarus-oxview-set",
-          sequence: "ACGT",
-          duplex: true,
-          start: 0,
-          length: 4,
-        }),
-        location.origin,
-      ),
-    );
+    expect(helix().dataset.sequence).toBe("ACGT");
+    expect(helix().dataset.duplex).toBe("true");
     fireEvent.click(
       screen.getByLabelText(
         "Show a generated complementary strand to illustrate a double helix",
       ),
     );
-    await waitFor(() =>
-      expect(spy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "lazarus-oxview-set",
-          sequence: "ACGT",
-          duplex: false,
-          start: 0,
-          length: 4,
-        }),
-        location.origin,
-      ),
-    );
+    expect(helix().dataset.duplex).toBe("false");
+    expect(helix().dataset.sequence).toBe("ACGT");
+    fireEvent.click(screen.getByRole("button", { name: "Next DNA strand" }));
+    expect(helix().dataset.sequence).toBe("TGCA");
   });
-  it("does not trust viewer acknowledgements from another origin", async () => {
+  it("keeps the letter track and the 3D selection in sync", async () => {
     await open();
-    const frame = screen.getByTitle(
-      "3D DNA viewer powered by oxView",
-    ) as HTMLIFrameElement;
-    act(() =>
-      window.dispatchEvent(
-        new MessageEvent("message", {
-          origin: "https://other.example",
-          source: frame.contentWindow,
-          data: { type: "lazarus-oxview-ready" },
-        }),
-      ),
-    );
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Build strand visually",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-  });
-  it("ignores stale render confirmations after changing the model", async () => {
-    await open();
-    const frame = screen.getByTitle(
-      "3D DNA viewer powered by oxView",
-    ) as HTMLIFrameElement;
-    const spy = vi.spyOn(frame.contentWindow!, "postMessage");
-    const receive = (data: Record<string, unknown>) =>
-      act(() =>
-        window.dispatchEvent(
-          new MessageEvent("message", {
-            origin: location.origin,
-            source: frame.contentWindow,
-            data,
-          }),
-        ),
-      );
-    receive({ type: "lazarus-oxview-ready" });
-    await waitFor(() => expect(spy).toHaveBeenCalled());
-    const original = spy.mock.calls.find(
-      ([data]) => data.type === "lazarus-oxview-set",
-    )![0];
-    const confirmation = {
-      type: "lazarus-oxview-rendered",
-      sequence: "ACGT",
-      renderedSequence: "ACGT",
-      start: 0,
-      requestId: original.requestId,
-    };
-    receive(confirmation);
-    expect(
-      screen.getByText("3D model matches these saved DNA bases."),
-    ).toBeTruthy();
-    fireEvent.click(
-      screen.getByLabelText(
-        "Show a generated complementary strand to illustrate a double helix",
-      ),
-    );
-    receive(confirmation);
-    expect(
-      screen.queryByText("3D model matches these saved DNA bases."),
-    ).toBeNull();
-    const requests = spy.mock.calls.filter(
-      ([data]) => data.type === "lazarus-oxview-set",
-    );
-    const latest = requests[requests.length - 1][0];
-    receive({ ...confirmation, requestId: latest.requestId });
-    expect(
-      screen.getByText("3D model matches these saved DNA bases."),
-    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Base 3: G" }));
+    expect(helix().dataset.selected).toBe("2");
+    expect(screen.getByRole("button", { name: "Base 3: G" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("pick-0"));
+    expect(screen.getByRole("button", { name: "Base 1: A" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Next DNA strand" }));
+    expect(helix().dataset.selected).toBe("");
   });
   it("shows loading failures with retry and never creates a placeholder helix", async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false } as Response);
     render(<DnaExplorer job={job} />);
-    fireEvent.click(screen.getByRole("button", { name: "Explore your DNA" }));
     await screen.findByRole("alert");
     expect(
       screen.getByRole("button", { name: "Try loading DNA again" }),
     ).toBeTruthy();
-    expect(screen.queryByTitle("3D DNA viewer powered by oxView")).toBeNull();
+    expect(screen.queryByTestId("helix")).toBeNull();
   });
   it("does not invent sequences before archive approval", () => {
     render(<DnaExplorer job={{ ...job, order: null }} />);

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import Helix3D from "./Helix";
+import { marksFromSegments } from "./dna";
 import { api, date, post } from "./api";
 import type {
   Archive,
@@ -101,15 +103,6 @@ export function DnaExperiment({ id, job }: { id: string; job: Archive }) {
       : 3;
   return (
     <section className="dna-panel">
-      <div className="section-heading">
-        <h2>DNA storage experiment</h2>
-        <span className="badge">Digital simulation · no physical DNA</span>
-      </div>
-      <p>
-        Download the encoded DNA, damage it with a reproducible sequencing
-        simulation, then decode the damaged reads independently and check every
-        file’s SHA-256.
-      </p>
       <Stepper reached={reached} />
       <Step1 id={id} dna={dna} />
       <SimForm
@@ -153,16 +146,10 @@ function Step1({ id, dna }: { id: string; dna: DnaExport }) {
         {dna.notice} This is the clean synthesis design (a potential
         manufacturing order), not sequencing data.
       </div>
-      <dl className="facts dna-facts">
+      <dl className="summary">
         <div>
           <dt>DNA sequences</dt>
           <dd>{c.sequences.toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt>Data strands · manifest strands per vault</dt>
-          <dd>
-            {c.data_strands} · {c.manifest_strands_per_vault}
-          </dd>
         </div>
         <div>
           <dt>Strand length</dt>
@@ -173,25 +160,19 @@ function Step1({ id, dna }: { id: string; dna: DnaExport }) {
           <dd>{c.redundancy}</dd>
         </div>
         <div>
-          <dt>Total nucleotides</dt>
-          <dd>{c.total_nucleotides.toLocaleString()}</dd>
-        </div>
-        <div>
-          <dt>Vaults · mean GC</dt>
-          <dd>
-            {c.n_vaults} · {c.gc_mean != null ? pct(c.gc_mean) : "—"}
-          </dd>
+          <dt>Mean GC</dt>
+          <dd>{c.gc_mean != null ? pct(c.gc_mean) : "—"}</dd>
         </div>
       </dl>
-      <p className="muted small">
-        Encoder: Erbgut DNA Fountain ·{" "}
+      <p className="fine">
+        {c.data_strands} data + {c.manifest_strands_per_vault} manifest strands per vault ·{" "}
+        {c.total_nucleotides.toLocaleString()} nt · Erbgut DNA Fountain ·{" "}
         {Object.entries(dna.export.encoder_configuration.pools)
           .map(([p, m]) => `${p}: ${m.n_chunks} chunks`)
           .join(", ")}{" "}
         · exported {date(dna.export.created)}
-      </p>
-      <p className="mono hash">
-        pre_simulation.fasta SHA-256 {pre?.sha256} ({kb(pre?.bytes)})
+        <br />
+        <span className="hash">pre_simulation.fasta SHA-256 {pre?.sha256} ({kb(pre?.bytes)})</span>
       </p>
       <div className="actions">
         <a className="button primary" href={fileUrl(id, PRE, true)}>
@@ -483,11 +464,7 @@ function Step2({
         are not laboratory results, and one simulated trial does not prove
         long-term physical recoverability.
       </div>
-      <dl className="facts dna-facts">
-        <div>
-          <dt>Clean sequences</dt>
-          <dd>{m.clean_sequences.toLocaleString()}</dd>
-        </div>
+      <dl className="summary">
         <div>
           <dt>Surviving sequences</dt>
           <dd>{m.surviving_sequences.toLocaleString()}</dd>
@@ -512,24 +489,18 @@ function Step2({
             {pct(r.deletion)}
           </dd>
         </div>
-        <div>
-          <dt>Exact · malformed reads</dt>
-          <dd>
-            {m.exact_reads.toLocaleString()} · {m.malformed_or_chimeric_reads}
-          </dd>
-        </div>
       </dl>
-      <p className="muted small">
-        Seed {sim.settings.seed} · {sim.settings.tech} · simulator{" "}
+      <p className="fine">
+        {m.clean_sequences.toLocaleString()} clean sequences · {m.exact_reads.toLocaleString()} exact and{" "}
+        {m.malformed_or_chimeric_reads} malformed reads · seed {sim.settings.seed} · {sim.settings.tech} · simulator{" "}
         {sim.settings.channel.toUpperCase()} · {sim.settings.coverage}× ·{" "}
         {sim.settings.storage_years} years
         {sim.settings.lost_vaults.length
           ? ` · vaults lost: ${sim.settings.lost_vaults.join(", ")}`
           : ""}{" "}
         · {date(sim.created)}
-      </p>
-      <p className="mono hash">
-        post_simulation_reads.fasta SHA-256 {post.sha256} ({kb(post.bytes)})
+        <br />
+        <span className="hash">post_simulation_reads.fasta SHA-256 {post.sha256} ({kb(post.bytes)})</span>
       </p>
       <div className="actions">
         <a className="button" href={fileUrl(id, PRE, true)}>
@@ -548,7 +519,7 @@ function Step2({
           {compare ? "Hide comparison" : "Compare Before vs. After"}
         </button>
       </div>
-      <p className="muted small">
+      <p className="fine">
         Ground truth (which read came from which strand) is kept in a separate{" "}
         <a href={fileUrl(id, sim.files["ground_truth.tsv"].path, true)}>
           simulator-only file
@@ -611,6 +582,7 @@ function Alignment({ segments }: { segments: Segment[] }) {
 function Compare({ id, simId, verdict }: { id: string; simId: string; verdict?: Verdict }) {
   const [data, setData] = useState<{ strands: CompareStrand[] } | null>(null);
   const [error, setError] = useState("");
+  const [view, setView] = useState<string | null>(null);
   useEffect(() => {
     api(`/jobs/${id}/simulations/${simId}/compare?limit=8`)
       .then(setData)
@@ -649,15 +621,41 @@ function Compare({ id, simId, verdict }: { id: string; simId: string; verdict?: 
               </div>
             </div>
           ) : (
-            s.reads.map((r) => (
-              <div key={r.read_id}>
-                <small className="muted">
-                  {r.read_id}: {r.substitutions} sub · {r.insertions} ins ·{" "}
-                  {r.deletions} del{r.malformed ? " · malformed read" : ""}
-                </small>
-                <Alignment segments={r.segments} />
-              </div>
-            ))
+            s.reads.map((r) => {
+              const key = `${s.id}/${r.read_id}`;
+              const marks = marksFromSegments(r.segments);
+              return (
+                <div key={r.read_id} className="read-row">
+                  <div className="read-head">
+                    <small className="muted">
+                      {r.read_id}: {r.substitutions} sub · {r.insertions} ins ·{" "}
+                      {r.deletions} del{r.malformed ? " · malformed read" : ""}
+                    </small>
+                    {!!marks.length && (
+                      <button className="ghost small-button" aria-expanded={view === key} onClick={() => setView(view === key ? null : key)}>
+                        {view === key ? "Hide 3D damage" : "Show damage in 3D"}
+                      </button>
+                    )}
+                  </div>
+                  <Alignment segments={r.segments} />
+                  {view === key && (
+                    <div className="stage stage-compact">
+                      <Helix3D
+                        sequence={s.clean}
+                        duplex={false}
+                        marks={marks}
+                        label={`3D model of clean strand ${s.id} with ${marks.length} damage sites from ${r.read_id}`}
+                      />
+                      <div className="stage-legend">
+                        <span><i className="ring ring-sub" />substitution</span>
+                        <span><i className="ring ring-ins" />insertion</span>
+                        <span><i className="ring ring-del" />deletion</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       ))}

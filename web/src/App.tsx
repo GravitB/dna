@@ -23,6 +23,8 @@ import type {
 import { Journey, FilePreview, ProgressInfo, DnaStory } from "./experience";
 import { api, date, post } from "./api";
 import { DecoderPage, DnaExperiment } from "./DnaWorkflow";
+import { ThemeToggle } from "./theme";
+import Helix3D from "./Helix";
 const money = (v?: number) =>
   v == null
     ? "Not recorded"
@@ -67,9 +69,13 @@ export default function App() {
   const decoderPage = hash.startsWith("#/decoder");
   return (
     <>
-      <header>
-        <a className="brand" href="#/">
-          Lazarus<span>Records that endure</span>
+      <header className="site-header">
+        <div className="header-inner">
+        <a className="brand" href="#/" aria-label="Lazarus home">
+          <BrandMark />
+          <span className="brand-text">
+            Lazarus<span>Records that endure</span>
+          </span>
         </a>
         <nav aria-label="Main navigation">
           <a
@@ -87,14 +93,19 @@ export default function App() {
             DNA Decoder
           </a>
         </nav>
-        <span className="simulation">Simulation workspace</span>
+        <div className="header-end">
+          <ThemeToggle />
+        </div>
+        </div>
       </header>
       <div className="notice">
+        <span className="simulation">Simulation workspace</span>
         Test DNA archive designs and recovery. No physical DNA is produced or
         purchased.
       </div>
       <main>
         <ErrorBox error={connection} retry={connect} />
+        <div className="page" key={hash.split("?")[0]}>
         {decoderPage ? (
           <DecoderPage key={hash} query={hash.split("?")[1] || ""} />
         ) : id ? (
@@ -108,10 +119,13 @@ export default function App() {
         ) : (
           <Archives />
         )}
+        </div>
       </main>
       <footer>
-        Lazarus · DNA archive simulation{" "}
-        <span>Retention is a test input, not a legal recommendation.</span>
+        <div className="footer-inner">
+          <span>Lazarus · DNA archive simulation</span>
+          <span>Retention is a test input, not a legal recommendation.</span>
+        </div>
       </footer>
     </>
   );
@@ -133,22 +147,24 @@ function Archives() {
   }, []);
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <span className="eyebrow">THE DNA ARCHIVE WORKSPACE</span><h1>Keep important records recoverable.</h1>
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="eyebrow">The DNA archive workspace</span>
+          <h1>Keep important records <em>recoverable.</em></h1>
           <p>
             Turn a file into a tested DNA archive. Restore it and see proof that every byte came back.
           </p>
+          <div className="actions">
+            <a className="button primary" href="#/new">
+              Archive my files
+            </a>
+            <a className="button" href="#/new?sample">
+              Try a picture demo
+            </a>
+          </div>
         </div>
-        <div className="actions">
-          <a className="button" href="#/new?sample">
-            Try a picture demo
-          </a>
-          <a className="button primary" href="#/new">
-            Archive my files
-          </a>
-        </div>
-      </div>
+        <HeroHelix jobs={jobs} />
+      </section>
       <Journey />
       <ErrorBox error={error} retry={load} />
       {!jobs ? (
@@ -169,7 +185,7 @@ function Archives() {
         </section>
       ) : (
         <div className="archive-cards">
-          {jobs.map(j => <a className="archive-card" key={j.id} href={`#/job/${j.id}`}>
+          {jobs.map((j, i) => <a className="archive-card" key={j.id} href={`#/job/${j.id}`} style={{ "--i": i } as React.CSSProperties}>
             <span className={`badge ${j.presentation.verified && !j.presentation.needs_retest ? "success" : ""}`}>{j.presentation.label}</span>
             <h2>{j.name}</h2><p>{j.company}</p>
             <dl className="facts"><div><dt>Selected files</dt><dd>{j.file_count ?? "Not recorded"}</dd></div><div><dt>Simulated aging</dt><dd>{j.retention_years} years</dd></div></dl>
@@ -178,18 +194,6 @@ function Archives() {
           </a>)}
         </div>
       )}
-      <section className="explanation">
-        <h2>From retention requirements to recovery evidence</h2>
-        <p>
-          Select records that must last. Lazarus tests a DNA archive design,
-          asks you to review it, then checks whether each file can be restored
-          unchanged.
-        </p>
-        <p>
-          You stay in control of the selected records and both approval
-          decisions. Costs and storage conditions are modeled.
-        </p>
-      </section>
     </>
   );
 }
@@ -626,6 +630,14 @@ function ArchiveView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [evs, setEvs] = useState<Ev[]>([]);
   const [loss, setLoss] = useState<number | null>(null);
+  const [tab, setTabState] = useState<Tab | null>(() => {
+    const t = new URLSearchParams(location.hash.split("?")[1] || "").get("tab");
+    return TABS.some((x) => x.id === t) ? (t as Tab) : null;
+  });
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    history.replaceState(null, "", `#/job/${id}?tab=${t}`);
+  };
   const refresh = () =>
     api(`/jobs/${id}`)
       .then((j) => {
@@ -725,35 +737,135 @@ function ArchiveView({ id }: { id: string }) {
         : p.phase === "results"
           ? 4
           : 1;
+  const storage =
+    job.storage?.backend === "supabase"
+      ? job.storage.state === "saved"
+        ? "Supabase"
+        : job.storage.state === "failed"
+          ? "Cloud save failed"
+          : job.storage.state === "uploading"
+            ? "Saving to Supabase…"
+            : "Not saved to cloud yet"
+      : "This computer";
+  const active: Tab = tab || (latest ? "recovery" : "dna");
+  const filesTable = (
+    <section>
+      <div className="section-heading">
+        <h2>Your files</h2>
+        <span>{expected.length || "Not recorded"} records</span>
+      </div>
+      <p className="muted">Each included file must be restored unchanged for the archive to pass recovery.</p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Record</th>
+              <th>Size</th>
+              <th>Included</th>
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((f) => (
+              <tr key={f.name}>
+                <td>
+                  <div className="file-cell">
+                    {f.included && job.originals_available && (
+                      <FilePreview name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}`} />
+                    )}
+                    <span>{f.name}</span>
+                  </div>
+                </td>
+                <td>{(f.bytes / 1000).toFixed(1)} KB</td>
+                <td>{f.included ? "Yes" : "Excluded by user"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+  const technical = (
+    <section className="technical">
+      <h2>How this design was chosen</h2>
+      <p className="muted">
+        {job.mode === "agent" ? "AI-guided analysis" : "Scripted analysis"} · every point is a measured simulation.
+      </p>
+      <h3>Codec experiments</h3>
+      <ExperimentChart rows={job.experiments} target={job.policy.target} />
+      <h3>Resilience experiments</h3>
+      <StressTable rows={job.stress} final={job.order?.settings} />
+      <details>
+        <summary>Agent activity</summary>
+        <Timeline evs={evs} />
+      </details>
+      {latest && (
+        <details>
+          <summary>Hashes and decoder evidence</summary>
+          <pre>{JSON.stringify(latest, null, 2)}</pre>
+        </details>
+      )}
+      {job.order && (
+        <details>
+          <summary>Synthesis files</summary>
+          {job.order.order_files.map((f) => (
+            <p key={f}>
+              <a target="_blank" rel="noreferrer" href={`/api/jobs/${id}/files/${f}`}>
+                {f}
+              </a>
+            </p>
+          ))}
+        </details>
+      )}
+    </section>
+  );
   return (
     <>
       <a className="back" href="#/">
         Back to archives
       </a>
-      <div className="page-heading">
+      <div className="archive-head">
         <div>
           <h1>{job.name || job.company}</h1>
-          <p>
+          <p className="muted">
             {job.company} · Created {date(job.created)}
           </p>
         </div>
-        <span
-          className={`badge ${p.verified && !p.needs_retest ? "success" : ""}`}
-        >
-          {p.label}
-        </span>
+        <div className="actions">
+          <span className={`badge ${p.verified && !p.needs_retest ? "success" : ""}`}>{p.label}</span>
+          <button className="ghost small-button" onClick={revise}>
+            Create revised archive
+          </button>
+        </div>
       </div>
-      <ol className="workflow">
-        {phase.map((label, i) => (
-          <li
-            key={label}
-            aria-current={stage === i ? "step" : undefined}
-            className={i < stage ? "complete" : ""}
-          >
-            {label}
-          </li>
-        ))}
-      </ol>
+      <dl className="summary">
+        <div>
+          <dt>Retention</dt>
+          <dd>{job.policy.retention_years} years</dd>
+        </div>
+        <div>
+          <dt>Modeled writing cost</dt>
+          <dd>
+            {money(job.order?.cost.write_usd || pending?.summary.write_usd)} <small>of {money(job.policy.budget_usd)} budget</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Storage locations</dt>
+          <dd>{job.order?.settings.n_vaults || job.policy.n_vaults}</dd>
+        </div>
+        <div>
+          <dt>Saved on</dt>
+          <dd>{storage}</dd>
+        </div>
+      </dl>
+      {!job.order && (
+        <ol className="workflow">
+          {phase.map((label, i) => (
+            <li key={label} aria-current={stage === i ? "step" : undefined} className={i < stage ? "complete" : ""}>
+              {label}
+            </li>
+          ))}
+        </ol>
+      )}
       <ErrorBox
         error={error}
         retry={() => {
@@ -769,330 +881,249 @@ function ArchiveView({ id }: { id: string }) {
           </div>
         </div>
       )}
-      <div className="archive-layout">
-        <div>
-          {(p.phase === "analysis" || job.status === "recovering") && (
-            <section className="analysis-status" role="status">
-              <span className="activity-dot" />
-              <div>
-                <h2>
-                  {job.status === "recovering"
-                    ? "Restoring records and checking file integrity"
-                    : "Testing a design for your records"}
-                </h2>
-                <p>{activity(evs)}</p><ProgressInfo job={job} events={evs} />
-                <small>
-                  Results will appear as tests complete. No decision is needed
-                  yet.
-                </small>
-              </div>
-            </section>
-          )}
-          {pending && (
-            <Approval
-              key={`${pending.tool}:${evs.filter((e) => e.type === "interrupt").length}`}
-              p={pending}
-              busy={busy}
-              decide={(d) => action("/approve", { decision: d })}
-              correct={() => action("/approve", {decision: "edit", args: pending.summary.correction})}
-            />
-          )}
-          <LearnedArchive job={job} busy={busy} action={action} />
-          <DnaStory job={job} id={id} />
-          <section>
-            <div className="section-heading">
-              <h2>Your files</h2>
-              <span>{expected.length || "Not recorded"} records</span>
-            </div>
-            <p>
-              Each included file must be restored unchanged for the archive to
-              pass recovery.
-            </p>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Record</th>
-                    <th>Size</th>
-                    <th>Included</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {files.map((f) => (
-                    <tr key={f.name}>
-                      <td><div className="file-cell">{f.included && job.originals_available && <FilePreview name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}`} />}<span>{f.name}</span></div></td>
-                      <td>{(f.bytes / 1000).toFixed(1)} KB</td>
-                      <td>{f.included ? "Yes" : "Excluded by user"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="archive-body">
+        {(p.phase === "analysis" || job.status === "recovering") && (
+          <section className="analysis-status" role="status">
+            <span className="activity-dot" />
+            <div>
+              <h2>
+                {job.status === "recovering"
+                  ? "Restoring records and checking file integrity"
+                  : "Testing a design for your records"}
+              </h2>
+              <p>{activity(evs)}</p>
+              <ProgressInfo job={job} events={evs} />
+              <small>Results will appear as tests complete. No decision is needed yet.</small>
             </div>
           </section>
-          <DnaExplorer job={job} />
-          {p.needs_retest && (
-            <div className="info">
-              Available locations have changed since the latest recovery test.
-              Run another test to check the current archive.
-            </div>
-          )}
-          {latest && (
-            <section className="results">
-              <div className="section-heading">
-                <h2>Recovery evidence</h2>
-                {job.certificate && job.status !== "recovering" && (
-                  <div className="actions">
-                    <a
-                      className="button"
-                      target="_blank"
-                      rel="noreferrer"
-                      href={`/api/jobs/${id}/files/${job.certificate}`}
-                    >
-                      View recovery report
-                    </a>
-                    <a
-                      className="button"
-                      download="recovery-report.html"
-                      href={`/api/jobs/${id}/files/${job.certificate}`}
-                    >
-                      Download report
-                    </a>
-                  </div>
-                )}
-              </div>
-              <h3
-                className={
-                  latest.all_verified ? "success-text" : "failure-text"
-                }
-              >
-                {latest.all_verified
-                  ? "All selected files restored unchanged"
-                  : latest.files.some((f) => f.sha256_match)
-                    ? "Some files could not be restored"
-                    : "Recovery test failed"}
-              </h3>
-              <p>
-                Tested {date(latest.tested_at)} ·{" "}
-                {latest.files.filter((f) => f.sha256_match).length} of{" "}
-                {expected.length || latest.files.length} records restored ·{" "}
-                {latest.vaults_available.length} of {latest.n_vaults} locations
-                available
-              </p>
-              {latest.error && (
-                <div className="error">
-                  {latest.error}. Review available locations or create a revised
-                  archive.
-                </div>
-              )}
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Record</th>
-                      <th>Recovery outcome</th>
-                      <th>Evidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expected.map((n) => {
-                      const f = latest.files.find((f) => f.name === n);
-                      return (
-                        <tr key={n}>
-                          <td>{n}</td>
-                          <td>
-                            {f?.sha256_match
-                              ? "Restored unchanged"
-                              : f?.error || "Not restored"}
-                          </td>
-                          <td>
-                            {f?.sha256_match ? (
-                              <a
-                                href={`/api/jobs/${id}/files/restored/${encodeURIComponent(n)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Open restored file
-                              </a>
-                            ) : (
-                              "No verified file"
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="restored-gallery">{latest.files.filter(f => f.sha256_match).map(f => <article key={f.name}>
-                <FilePreview large name={f.name} src={`/api/jobs/${id}/preview/${encodeURIComponent(f.name)}?stage=restored&attempt=${job.drills.length}`} />
-                <h3>{f.name}</h3><span className="badge success">Restored unchanged · SHA-256 match</span>
-                <p>{((files.find(x => x.name === f.name)?.bytes || 0)/1000).toFixed(1)} KB · Exact file integrity verified</p>
-                <a className="button primary" download={f.name} href={`/api/jobs/${id}/files/restored/${encodeURIComponent(f.name)}`}>Download restored file</a>
-              </article>)}</div>
-              <p className="muted">
-                File integrity is checked against the original SHA-256
-                fingerprint. Simulation evidence is not regulatory
-                certification.
-              </p>
-            </section>
-          )}
-          {job.order && <DnaExperiment id={id} job={job} />}
-          {job.order && !job.pending && (
-            <section>
-              <h2>Recovery scenarios</h2>
-              <p>
-                Test the archive again, or simulate losing a storage location.
-                This affects only this simulated archive.
-              </p>
-              <div className="locations">
-                {job.vaults.map((v) => (
-                  <div key={v.vault_id}>
-                    <strong>Location {v.vault_id}</strong>
-                    <span>
-                      {v.status === "destroyed" ? "Unavailable" : "Available"}
-                    </span>
-                    <button
-                      disabled={
-                        busy ||
-                        !job.finished ||
-                        v.status === "destroyed" ||
-                        job.status === "recovering"
-                      }
-                      onClick={() => setLoss(v.vault_id)}
-                    >
-                      Simulate loss of location
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {loss !== null && (
-                <div className="confirmation">
-                  <h3>Simulate loss of location {loss}?</h3>
-                  <p>
-                    This removes its simulated DNA order files. Recovery will
-                    use the remaining locations.
-                  </p>
-                  <div className="actions">
-                    <button disabled={busy} onClick={() => setLoss(null)}>
-                      Cancel
-                    </button>
-                    <button
-                      className="danger"
-                      disabled={busy}
-                      onClick={() => action(`/vaults/${loss}/destroy`)}
-                    >
-                      Confirm simulated loss
-                    </button>
-                  </div>
-                </div>
-              )}
-              <button
-                disabled={busy || !job.finished || job.status === "recovering"}
-                onClick={() => action("/drill", { attempt: job.drills.length })}
-              >
-                {busy || job.status === "recovering"
-                  ? "Recovery operation in progress…"
-                  : "Run another recovery test"}
-              </button>
-            </section>
-          )}
-          {["attention"].includes(p.phase) && (
-            <section>
-              <h2>Your next step</h2>
-              <p>
-                Start a revised archive with these requirements. If storage
-                locations exist, you can also run another recovery test.
-              </p>
-              <button onClick={revise}>Create revised archive</button>
-            </section>
-          )}
-          <details className="technical">
-            <summary>Technical details</summary>
-            <h3>Analysis method</h3>
+        )}
+        {pending && (
+          <Approval
+            key={`${pending.tool}:${evs.filter((e) => e.type === "interrupt").length}`}
+            p={pending}
+            busy={busy}
+            decide={(d) => action("/approve", { decision: d })}
+            correct={() => action("/approve", { decision: "edit", args: pending.summary.correction })}
+          />
+        )}
+        {["attention"].includes(p.phase) && (
+          <section>
+            <h2>Your next step</h2>
             <p>
-              {job.mode === "agent"
-                ? "AI-guided analysis"
-                : "Scripted analysis"}
+              Start a revised archive with these requirements. If storage locations exist, you can also run another
+              recovery test.
             </p>
-            <h3>Codec experiments</h3>
-            <ExperimentChart
-              rows={job.experiments}
-              target={job.policy.target}
-            />
-            <h3>All resilience experiments (includes earlier designs)</h3>
-            <StressTable rows={job.stress} />
-            <h3>Agent activity</h3>
-            <Timeline evs={evs} />
-
-            {latest && (
-              <>
-                <h3>Hashes and decoder evidence</h3>
-                <pre>{JSON.stringify(latest, null, 2)}</pre>
-              </>
-            )}
-            {job.order && (
-              <>
-                <h3>Synthesis files</h3>
-                {job.order.order_files.map((f) => (
-                  <p key={f}>
-                    <a
-                      target="_blank"
-                      rel="noreferrer"
-                      href={`/api/jobs/${id}/files/${f}`}
-                    >
-                      {f}
-                    </a>
+            <button onClick={revise}>Create revised archive</button>
+          </section>
+        )}
+        {!job.order ? (
+          <>
+            <LearnedArchive job={job} busy={busy} action={action} />
+            {filesTable}
+            <details className="technical-toggle">
+              <summary>How this design is being chosen</summary>
+              {technical}
+            </details>
+          </>
+        ) : (
+          <>
+            <Tabs active={active} onChange={setTab} />
+            <div className="tab-panel" role="tabpanel" id={`panel-${active}`} aria-labelledby={`tab-${active}`} key={active}>
+              {active === "recovery" && (
+                <>
+                  {p.needs_retest && (
+                    <div className="info">
+                      Available locations have changed since the latest recovery test. Run another test to check the
+                      current archive.
+                    </div>
+                  )}
+                  {latest ? (
+                    <section className="results">
+                      <div className="section-heading">
+                        <div>
+                          <h2 className={latest.all_verified ? "success-text" : "failure-text"}>
+                            {latest.all_verified
+                              ? "All selected files restored unchanged"
+                              : latest.files.some((f) => f.sha256_match)
+                                ? "Some files could not be restored"
+                                : "Recovery test failed"}
+                          </h2>
+                          <p className="muted">
+                            Tested {date(latest.tested_at)} · {latest.files.filter((f) => f.sha256_match).length} of{" "}
+                            {expected.length || latest.files.length} records restored · {latest.vaults_available.length}{" "}
+                            of {latest.n_vaults} locations available
+                          </p>
+                        </div>
+                        {job.certificate && job.status !== "recovering" && (
+                          <a
+                            className="button small-button"
+                            target="_blank"
+                            rel="noreferrer"
+                            href={`/api/jobs/${id}/files/${job.certificate}`}
+                          >
+                            View recovery report
+                          </a>
+                        )}
+                      </div>
+                      {latest.error && (
+                        <div className="error">{latest.error}. Review available locations or create a revised archive.</div>
+                      )}
+                      <ul className="restored">
+                        {expected.map((n) => {
+                          const f = latest.files.find((f) => f.name === n);
+                          const href = `/api/jobs/${id}/files/restored/${encodeURIComponent(n)}`;
+                          return (
+                            <li key={n} className={f?.sha256_match ? "ok" : "bad"}>
+                              {f?.sha256_match ? (
+                                <FilePreview
+                                  name={n}
+                                  src={`/api/jobs/${id}/preview/${encodeURIComponent(n)}?stage=restored&attempt=${job.drills.length}`}
+                                />
+                              ) : (
+                                <span className="file-icon">—</span>
+                              )}
+                              <div className="restored-name">
+                                <strong>{n}</strong>
+                                <small>{f?.sha256_match ? "Restored unchanged · SHA-256 match" : f?.error || "Not restored"}</small>
+                              </div>
+                              {f?.sha256_match ? (
+                                <div className="actions">
+                                  <a href={href} target="_blank" rel="noreferrer">
+                                    Open restored file
+                                  </a>
+                                  <a className="button small-button" download={n} href={href}>
+                                    Download
+                                  </a>
+                                </div>
+                              ) : (
+                                <span className="muted">No verified file</span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <p className="fine">
+                        File integrity is checked against the original SHA-256 fingerprint. Simulation evidence is not
+                        regulatory certification.
+                      </p>
+                    </section>
+                  ) : (
+                    <p className="muted">No recovery test has run yet.</p>
+                  )}
+                  {!job.pending && (
+                    <section>
+                      <h2>Recovery scenarios</h2>
+                      <p className="muted">
+                        Test again, or simulate losing a storage location. This affects only this simulated archive.
+                      </p>
+                      <div className="locations">
+                        {job.vaults.map((v) => (
+                          <div key={v.vault_id} className={v.status === "destroyed" ? "lost" : ""}>
+                            <strong>Location {v.vault_id}</strong>
+                            <span>{v.status === "destroyed" ? "Unavailable" : "Available"}</span>
+                            <button
+                              className="small-button"
+                              disabled={busy || !job.finished || v.status === "destroyed" || job.status === "recovering"}
+                              onClick={() => setLoss(v.vault_id)}
+                            >
+                              Simulate loss of location
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {loss !== null && (
+                        <div className="confirmation">
+                          <h3>Simulate loss of location {loss}?</h3>
+                          <p>This removes its simulated DNA order files. Recovery will use the remaining locations.</p>
+                          <div className="actions">
+                            <button disabled={busy} onClick={() => setLoss(null)}>
+                              Cancel
+                            </button>
+                            <button className="danger" disabled={busy} onClick={() => action(`/vaults/${loss}/destroy`)}>
+                              Confirm simulated loss
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        className="primary"
+                        disabled={busy || !job.finished || job.status === "recovering"}
+                        onClick={() => action("/drill", { attempt: job.drills.length })}
+                      >
+                        {busy || job.status === "recovering" ? "Recovery operation in progress…" : "Run another recovery test"}
+                      </button>
+                    </section>
+                  )}
+                </>
+              )}
+              {active === "dna" && (
+                <>
+                  <DnaStory job={job} id={id} />
+                  <DnaExplorer job={job} />
+                </>
+              )}
+              {active === "damage" && <DnaExperiment id={id} job={job} />}
+              {active === "details" && (
+                <>
+                  <LearnedArchive job={job} busy={busy} action={action} />
+                  {filesTable}
+                  {technical}
+                  {job.policy.notes && (
+                    <section>
+                      <h2>Your requirements</h2>
+                      <p>{job.policy.notes}</p>
+                    </section>
+                  )}
+                  <p className="fine">
+                    Costs and storage conditions are modeled. Passing these trials does not guarantee future recovery.
                   </p>
-                ))}
-              </>
-            )}
-          </details>
-        </div>
-        <aside>
-          <h2>Archive requirements</h2>
-          <div className="info" role="status">
-            {job.storage?.backend === "supabase"
-              ? job.storage.state === "saved"
-                ? "Saved to Supabase"
-                : job.storage.state === "failed"
-                  ? "Cloud save failed. Working copies were retained. Check the connection and create a revised archive to retry."
-                  : job.storage.state === "uploading"
-                    ? "Saving DNA files to Supabase…"
-                    : "Cloud archive not saved yet"
-              : "Stored on this computer"}
-          </div>
-          <dl className="facts">
-            <div>
-              <dt>Retention period</dt>
-              <dd>{job.policy.retention_years} years</dd>
+                </>
+              )}
             </div>
-            <div>
-              <dt>Estimated budget</dt>
-              <dd>{money(job.policy.budget_usd)}</dd>
-            </div>
-            <div>
-              <dt>Modeled writing cost</dt>
-              <dd>
-                {money(job.order?.cost.write_usd || pending?.summary.write_usd)}
-              </dd>
-            </div>
-            <div>
-              <dt>Storage locations</dt>
-              <dd>{job.order?.settings.n_vaults || job.policy.n_vaults}</dd>
-            </div>
-          </dl>
-          {job.policy.notes && <p>{job.policy.notes}</p>}
-          <hr />
-          <p>
-            Costs and storage conditions are modeled. Passing these trials does
-            not guarantee future recovery.
-          </p>
-          <button onClick={revise}>Create revised archive</button>
-        </aside>
+          </>
+        )}
       </div>
     </>
   );
 }
+
+type Tab = "recovery" | "dna" | "damage" | "details";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "recovery", label: "Recovery" },
+  { id: "dna", label: "DNA" },
+  { id: "damage", label: "Damage test" },
+  { id: "details", label: "Details" },
+];
+function Tabs({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
+  const move = (dir: number) => {
+    const i = TABS.findIndex((t) => t.id === active);
+    const next = TABS[(i + dir + TABS.length) % TABS.length].id;
+    onChange(next);
+    document.getElementById(`tab-${next}`)?.focus();
+  };
+  return (
+    <div className="tabs" role="tablist" aria-label="Archive sections">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          id={`tab-${t.id}`}
+          role="tab"
+          aria-selected={active === t.id}
+          aria-controls={`panel-${t.id}`}
+          tabIndex={active === t.id ? 0 : -1}
+          onClick={() => onChange(t.id)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowRight") move(1);
+            if (e.key === "ArrowLeft") move(-1);
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function activity(evs: Ev[]) {
   const last = [...evs].reverse().find((e) => e.type === "tool_call");
   if (!last) return "Preparing your archive analysis.";
@@ -1384,9 +1415,25 @@ function ExperimentChart({ rows, target }: { rows: any[]; target: number }) {
   );
 }
 
-function StressTable({ rows }: { rows: any[] }) {
+function StressTable({ rows, final }: { rows: any[]; final?: { redundancy?: number } }) {
   if (!rows.length)
     return <div className="empty">The adversary has not attacked yet.</div>;
+  const mine = final?.redundancy != null ? rows.filter((r) => r.settings.redundancy === final.redundancy) : [];
+  if (mine.length && mine.length < rows.length)
+    return (
+      <>
+        <p className="muted small">Final design (redundancy {final!.redundancy})</p>
+        <StressRows rows={mine} />
+        <details>
+          <summary>Show all {rows.length} experiments, including earlier designs</summary>
+          <StressRows rows={rows} />
+        </details>
+      </>
+    );
+  return <StressRows rows={rows} />;
+}
+
+function StressRows({ rows }: { rows: any[] }) {
   const label: Record<string, string> = {
     vault_loss: "Lose 1 vault site",
     simulator_b: "Different sequencer (Sim B)",
@@ -1422,5 +1469,69 @@ function StressTable({ rows }: { rows: any[] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+function BrandMark() {
+  // Two strands crossing twice, with rungs in the four base colors.
+  return (
+    <svg className="brand-mark" viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
+      <path d="M8 2c0 6 12 6 12 12S8 20 8 26" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="M20 2c0 6-12 6-12 12s12 6 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" opacity=".55" />
+      <rect x="10" y="6.2" width="8" height="2" rx="1" fill="var(--A)" />
+      <rect x="10" y="19.8" width="8" height="2" rx="1" fill="var(--C)" />
+      <rect x="11.5" y="10.4" width="5" height="1.8" rx=".9" fill="var(--G)" />
+      <rect x="11.5" y="15.8" width="5" height="1.8" rx=".9" fill="var(--T)" />
+    </svg>
+  );
+}
+
+/** A real encoded strand from the newest archive that has one; otherwise an unlabeled backbone. */
+function HeroHelix({ jobs }: { jobs: ArchiveSummary[] | null }) {
+  const [strand, setStrand] = useState<{ seq: string; name: string } | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!jobs) return;
+    let active = true;
+    (async () => {
+      for (const j of jobs.slice(0, 4)) {
+        try {
+          const full: Archive = await api(`/jobs/${j.id}`);
+          const seq = full.dna_summary?.example;
+          if (seq && /^[ACGT]+$/.test(seq)) {
+            if (active) setStrand({ seq: seq.slice(0, 44), name: j.name || j.company });
+            break;
+          }
+        } catch {
+          /* try the next archive */
+        }
+      }
+      if (active) setDone(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [jobs?.map((j) => j.id).join(",")]);
+  return (
+    <figure className="hero-figure">
+      <Helix3D
+        ambient
+        sequence={strand?.seq ?? null}
+        placeholderLength={44}
+        label={strand ? `Rotating 3D model of an encoded strand from ${strand.name}` : "Rotating DNA backbone"}
+      />
+      <figcaption>
+        {strand ? (
+          <>
+            <span className="mono">{strand.seq.slice(0, 24)}…</span>
+            First 44 bases of a strand from <b>{strand.name}</b>
+          </>
+        ) : done ? (
+          "Backbone only. Archive a file to see its real bases here."
+        ) : (
+          " "
+        )}
+      </figcaption>
+    </figure>
   );
 }
