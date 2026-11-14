@@ -84,7 +84,16 @@ git clone https://github.com/GravitB/dna.git && cd dna
 cp .env.example .env            # add ANTHROPIC_API_KEY for the deep agent
 scripts/run.sh                  # fetches Erbgut, installs, builds the UI, serves on :8000
 ```
-Open http://localhost:8000, keep "Include Northstar Bio sample files" ticked, and press **Start archive**.
+Open http://localhost:8000. The **Archives** workspace lists your archives and their latest recovery outcomes.
+Choose **Create archive** to upload your own records, or **Try sample archive** for fictional Northstar Bio files.
+Review the inclusion checkboxes, enter retention and budget requirements, then select **Analyze archive**.
+Technical settings and the analysis method are under **Advanced settings**.
+
+Review the proposed cost and resilience evidence before selecting **Approve simulated archive**.
+Then select **Run recovery test** to delete this job's working copies and restore the selected records from
+simulated DNA. Original files elsewhere on your computer are untouched. The resulting report is simulation
+evidence, not regulatory certification. Agent logs, codec charts, and synthesis files are under **Technical details**.
+A rejected or interrupted archive can be revised with its requirements prefilled; upload the records again.
 
 - **Deep agent mode** needs `ANTHROPIC_API_KEY`. The model defaults to `claude-sonnet-5-5`; override it
   with `LAZARUS_MODEL=anthropic:<model>`.
@@ -100,6 +109,7 @@ cd web && npm run dev           # http://localhost:5173, proxies /api to :8000
 Tests:
 ```bash
 cd lazarus && uv run pytest -q
+cd ../web && npm test && npm run build
 ```
 The tests cover encryption and tamper detection, decoding the manifest with only the bootstrap spec,
 corrupted strands never producing wrong bytes, recovery from 2 of 3 vaults, and the full deep agent
