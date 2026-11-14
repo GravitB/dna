@@ -334,7 +334,7 @@ function Explorer({ job }: { job: Archive }) {
           <div className="dna-stage">
             <iframe
               ref={frame}
-              src="/oxview/index.html"
+              src={`${import.meta.env.BASE_URL}oxview/index.html`}
               title="3D DNA viewer powered by oxView"
               sandbox="allow-scripts allow-same-origin"
               onLoad={() => {
@@ -357,7 +357,7 @@ function Explorer({ job }: { job: Archive }) {
                 onClick={() => {
                   setReady(false);
                   setRendererError("");
-                  if (frame.current) frame.current.src = "/oxview/index.html";
+                  if (frame.current) frame.current.src = `${import.meta.env.BASE_URL}oxview/index.html`;
                 }}
               >
                 Reload 3D viewer
@@ -500,11 +500,11 @@ function Explorer({ job }: { job: Archive }) {
             A visual model of one short strand from your archive. It does not
             show physical DNA, predict its exact folded shape, or prove
             recovery. Viewing does not change your archive.{" "}
-            <a href="/oxview/README.md" target="_blank" rel="noreferrer">
+            <a href={`${import.meta.env.BASE_URL}oxview/README.md`} target="_blank" rel="noreferrer">
               Powered by oxView
             </a>{" "}
             ·{" "}
-            <a href="/oxview/LICENSE" target="_blank" rel="noreferrer">
+            <a href={`${import.meta.env.BASE_URL}oxview/LICENSE`} target="_blank" rel="noreferrer">
               GPL-3.0-or-later
             </a>
           </p>

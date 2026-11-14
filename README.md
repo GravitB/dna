@@ -105,7 +105,7 @@ git clone https://github.com/GravitB/dna.git && cd dna
 cp .env.example .env            # add GOOGLE_API_KEY or ANTHROPIC_API_KEY for the deep agent
 scripts/run.sh                  # fetches Erbgut, installs, builds the UI, serves on :8000
 ```
-Open http://localhost:8000. The **Archives** workspace lists your archives and their latest recovery outcomes.
+Open http://localhost:8000 for the homepage, or http://localhost:8000/app/ for the business workspace. The **Archives** page lists your archives and their latest recovery outcomes.
 Choose **Create archive** to upload your own records, or **Try sample archive** for fictional Northstar Bio files.
 Review the inclusion checkboxes, enter retention and budget requirements, then select **Analyze archive**.
 Technical settings and the analysis method are under **Advanced settings**.
@@ -125,7 +125,7 @@ A rejected or interrupted archive can be revised with its requirements prefilled
 Development (two terminals):
 ```bash
 cd lazarus && uv run uvicorn lazarus.api:app --reload --port 8000
-cd web && npm run dev           # http://localhost:5173, proxies /api to :8000
+cd web && npm run dev           # http://localhost:5173/app/, proxies /api to :8000
 ```
 
 Tests:

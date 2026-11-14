@@ -1,7 +1,7 @@
 """HTTP API + server-sent events (contract: LAZARUS_TEAM_PLAN.md section 8).
 
 Run: uv run uvicorn lazarus.api:app --port 8000
-Serves the built web UI from ../web/dist when present.
+Serves the homepage from ../site at / and the built web UI from ../web/dist at /app/.
 """
 
 from __future__ import annotations
@@ -18,7 +18,13 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -30,6 +36,7 @@ from .persistence import get_cloud, StorageError  # noqa: E402
 MAX_UPLOAD_BYTES = 200_000
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample_data" / "northstar_bio"
 WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+SITE_DIR = Path(__file__).resolve().parents[2] / "site"
 
 from contextlib import asynccontextmanager, contextmanager
 
@@ -756,13 +763,20 @@ def decode_file(sid: str, name: str, download: bool = False):
     return _file_response(data, filename, download, generated=name in ("report.json", "report.html"))
 
 
-if WEB_DIST.exists():
-    app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+@app.get("/api")
+@app.get("/api/{path:path}")
+def unknown_api(path: str = ""):
+    raise HTTPException(404, "Unknown API path")
 
-    @app.get("/{path:path}")
+
+if WEB_DIST.exists():
+
+    @app.get("/app")
+    def app_redirect():
+        return RedirectResponse("/app/")
+
+    @app.get("/app/{path:path}")
     def spa(path: str):
-        if path == "api" or path.startswith("api/"):
-            raise HTTPException(404, "Unknown API path")
         f = WEB_DIST / path
         if path and f.is_file() and WEB_DIST in f.resolve().parents:
             return FileResponse(f)
@@ -771,8 +785,17 @@ if WEB_DIST.exists():
         )
 else:
 
-    @app.get("/")
-    def root():
+    @app.get("/app/{path:path}")
+    def spa_missing(path: str = ""):
         return JSONResponse(
             {"msg": "Lazarus API. Build the UI with: cd web && npm run build"}
         )
+
+
+if SITE_DIR.exists():
+    app.mount("/", StaticFiles(directory=SITE_DIR, html=True), name="site")
+else:
+
+    @app.get("/")
+    def root():
+        return RedirectResponse("/app/")

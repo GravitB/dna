@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lazarus, an AI archivist for records stored in DNA</title>
+<meta name="description" content="Lazarus is an AI agent that designs, attacks and proves DNA archives for records that must survive for decades, and hands back a certificate showing every file came back byte for byte.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#EAF3ED">
+
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/favicon.svg">
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="preload" href="assets/fonts/InstrumentSans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+
+<script>
+/* Turn on the pinned, faded layout only when scripting is available, and take it
+   back off if scrolly.js never reports for duty. Without this class the page is a
+   plain, fully legible, top-to-bottom story. */
+(function () {
+  var r = document.documentElement;
+  r.className += ' js';
+  setTimeout(function () {
+    if (!r.dataset.scrollyReady) r.className = r.className.replace(' js', '');
+  }, 1500);
+})();
+</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <a class="brand" href="./">
+    <img src="assets/mark.svg" alt="" width="28" height="28">
+    <span>Lazarus</span>
+  </a>
+  <nav aria-label="Links">
+    <a href="https://github.com/GravitB/dna">Code</a>
+    <a class="nav-cta" href="/app/">Business workspace</a>
+  </nav>
+  <div class="bar" aria-hidden="true"><i data-progress></i></div>
+</header>
+
+<nav class="dots" aria-label="Scenes">
+  <a href="#hero"  aria-label="Scene 1 of 10"><i></i></a>
+  <a href="#write" aria-label="Scene 2 of 10"><i></i></a>
+  <a href="#bill"  aria-label="Scene 3 of 10"><i></i></a>
+  <a href="#noise" aria-label="Scene 4 of 10"><i></i></a>
+  <a href="#vote"  aria-label="Scene 5 of 10"><i></i></a>
+  <a href="#polish" aria-label="Scene 6 of 10"><i></i></a>
+  <a href="#loop"  aria-label="Scene 7 of 10"><i></i></a>
+  <a href="#audit" aria-label="Scene 8 of 10"><i></i></a>
+  <a href="#proof" aria-label="Scene 9 of 10"><i></i></a>
+  <a href="#close" aria-label="Scene 10 of 10"><i></i></a>
+</nav>
+
+<main id="main">
+
+<!-- 1 ─ hero ─────────────────────────────────────────────── the promise -->
+<section class="scene scene--center" id="hero" data-scene="hero" style="--travel:.9">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at="0" data-until=".42">
+        <p class="idx">01</p>
+        <h1 class="line line--xl">Every DNA coding rule is a hypothesis.</h1>
+        <p class="line line--soft">We measure which ones pay off.</p>
+      </div>
+      <div class="cb cb--intro" data-at=".46">
+        <p class="intro">DNA can hold data for centuries in the space of a sugar cube. The
+        problem is not writing it. It is that reading it back is expensive, and every
+        pipeline today decides how to encode by following rules nobody has checked against
+        their own sequencing channel.</p>
+        <p class="intro intro--lead">Lazarus is the AI archivist for records that must
+        last decades. It designs the DNA archive, attacks its own design, and proves every
+        file comes back byte for byte before anything is ordered.</p>
+      </div>
+    </div>
+    <a class="cue" href="#write" data-at="0" data-until=".38">
+      <span>Scroll</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+    </a>
+  </div>
+</section>
+
+<!-- 2 ─ write ───────────────────────────────────────── a file becomes DNA -->
+<section class="scene" id="write" data-scene="write" style="--travel:1.5">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".12">
+        <p class="idx">02</p>
+        <p class="line">A file becomes DNA.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ─ bill ──────────────────────────────────────────── the recurring cost -->
+<section class="scene" id="bill" data-scene="bill" style="--travel:2">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".1">
+        <p class="idx">03</p>
+        <p class="line line--soft">Writing it is once.</p>
+      </div>
+      <div class="cb" data-at=".45">
+        <p class="idx">03</p>
+        <p class="line">Reading it back is the bill that comes back.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 ─ noise ────────────────────────────────────── why reading is expensive -->
+<section class="scene" id="noise" data-scene="noise" style="--travel:1.8">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".14">
+        <p class="idx">04</p>
+        <p class="line">Every read comes back wrong. <span class="hl-cost">Differently wrong.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 ─ vote ───────────────────────────────────────────────── the classic fix -->
+<section class="scene" id="vote" data-scene="vote" style="--travel:2.1">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".12">
+        <p class="idx">05</p>
+        <p class="line">The field's answer: read more, take a vote.</p>
+      </div>
+      <div class="cb" data-at=".52">
+        <p class="idx">05</p>
+        <p class="num num--audit">67.2%</p>
+        <p class="line line--sm">of strands come back exactly right.</p>
+        <p class="cap">six reads per strand, real Nanopore data</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 ─ polish ──────────────────────────────────────────────── the money beat -->
+<section class="scene" id="polish" data-scene="polish" style="--travel:2.3">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".12">
+        <p class="idx">06</p>
+        <p class="line">A small model learned what voting cannot fix.</p>
+      </div>
+      <div class="cb" data-at=".52">
+        <p class="idx">06</p>
+        <p class="num num--gain">88.1%</p>
+        <p class="cap">0.8M parameters. Same reads, same file, one extra step.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 ─ loop ────────────────────────────────────── the part nobody else does -->
+<section class="scene" id="loop" data-scene="loop" style="--travel:2.1">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".1">
+        <p class="idx">07</p>
+        <p class="line line--soft">Then we turn it around.</p>
+      </div>
+      <div class="cb" data-at=".48">
+        <p class="idx">07</p>
+        <p class="line">The failures teach the encoder what to avoid.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 ─ audit ──────────────────────────────────────────────────── the product -->
+<section class="scene" id="audit" data-scene="audit" style="--travel:2.3">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at=".1">
+        <p class="idx">08</p>
+        <p class="line">Every rule, measured on your channel.</p>
+      </div>
+      <div class="cb" data-at=".62">
+        <p class="idx">08</p>
+        <p class="line line--sm">Each standard rule pays off on exactly one channel. <span class="hl-audit">Nobody measures that today.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 ─ proof ─────────────────────────────────────────────────── the receipts -->
+<section class="scene scene--center" id="proof" data-scene="proof" style="--travel:1.8">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy copy--flow" data-copy>
+      <p class="idx idx--flow" data-at="0" data-hold>09</p>
+      <div class="stats">
+        <div class="stat" data-at=".1" data-hold>
+          <p class="num num--gain">88.1%</p>
+          <p class="stat-b">against 67.2%</p>
+          <p class="cap">exact strands at six reads, on 1,996 held-out real clusters</p>
+        </div>
+        <div class="stat" data-at=".34" data-hold>
+          <p class="num num--audit">0.8M</p>
+          <p class="stat-b">parameters</p>
+          <p class="cap">trained in 13 minutes</p>
+        </div>
+        <div class="stat" data-at=".58" data-hold>
+          <p class="num">229</p>
+          <p class="stat-b">strands exact, decoded</p>
+          <p class="cap">on the microcontroller itself, against 211 classic</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 ─ close ────────────────────────────────────────────────────── the ask -->
+<section class="scene scene--center scene--close" id="close" data-scene="close" style="--travel:.6">
+  <div class="stage" data-stage>
+    <div class="art" data-art></div>
+    <div class="copy" data-copy>
+      <div class="cb" data-at="0">
+        <p class="wordmark wordmark--text">Lazarus</p>
+        <p class="asks">
+          <a href="https://github.com/GravitB/dna">Read the code</a>
+          <span class="sep" aria-hidden="true">·</span>
+          <a href="/app/">Open the business workspace</a>
+        </p>
+        <p class="credit">Real reads: Microsoft clustered Nanopore reads (MIT) and the DNAformer binned reads, Technion (CC BY 4.0).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script type="module" src="scrolly.js"></script>
+</body>
+</html>

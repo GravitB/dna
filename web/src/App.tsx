@@ -72,6 +72,7 @@ export default function App() {
           Lazarus<span>Records that endure</span>
         </a>
         <nav aria-label="Main navigation">
+          <a href="/">Home</a>
           <a
             aria-current={
               !id && !hash.startsWith("#/new") && !decoderPage

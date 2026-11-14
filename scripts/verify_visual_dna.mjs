@@ -43,7 +43,7 @@ try {
     id,
     "Create and approve a sample archive before running this read-only viewer check.",
   );
-  await page.goto(base + "/#/job/" + id);
+  await page.goto(base + "/app/#/job/" + id);
   await page.getByRole("button", { name: "Explore your DNA" }).click();
   const ready = () =>
     page
