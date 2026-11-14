@@ -41,7 +41,10 @@ Workflow (write it as todos first with write_todos, keep them updated):
    All uploaded files were explicitly selected by the customer. Include ALL of them in prepare_archive.
    You may explain suitability concerns, but never silently exclude a selected record.
 2. prepare_archive with the DNA-tier files. Note the reference_pool.
-3. Delegate codec design to the `codec-engineer` subagent. Give it: job_id, reference pool id, policy
+3. First delegate a quick learned-encoding investigation to codec-researcher. Use its report to explain
+   the evidence and limits of learned selection. Keep research results distinct from the actual archive
+   design: only archive experiments and recovery drills establish its recoverability.
+   Delegate codec design to the `codec-engineer` subagent. Give it: job_id, reference pool id, policy
    (retention years, tech, planned coverage, budget, target, n_vaults). Ask for the cheapest
    (redundancy, coverage) that meets the target on the normal channel, with evidence.
    The number of vault sites is fixed by the customer's policy; do not change it.
@@ -100,6 +103,9 @@ def build_agent(model: str | None = None, analysis_preset: str = "standard"):
 
     T = {f.__name__: _t(f) for f in tools.ALL_TOOLS}
     subagents = [
+        {"name": "codec-researcher", "description": "Runs real Erbgut risk-learning experiments and critically compares learned encoding with the same-decoder default.",
+         "system_prompt": "Run run_learning_experiment once in quick mode. Report default and learned recovery, density, trial counts, and whether a benefit was measured. Save your analysis to /learning-evidence.md. Quick results are exploratory. The polisher is frozen, not retrained. These experiments use a fixed research file, not customer files; never claim their learned scorer was deployed or certified. Return failures honestly. Recommend a full benchmark only if justified.",
+         "tools": [T["run_learning_experiment"]]},
         {"name": "codec-engineer", "description": "Designs the DNA encoding: runs real Erbgut codec sweeps and experiments, returns the cheapest design meeting the target with evidence.",
          "system_prompt": CODEC_PROMPT + " For quick_demo call run_quick_design once and return its exact settings; do not run a separate search.", "tools": [T["run_quick_design"], T["build_profile"], T["run_codec_sweep"], T["run_codec_experiment"], T["estimate_cost"]]},
         {"name": "adversary", "description": "Red-teams a proposed design under vault loss, a different sequencing channel, double decay and low coverage.",
@@ -110,8 +116,9 @@ def build_agent(model: str | None = None, analysis_preset: str = "standard"):
          "system_prompt": COMPLIANCE_PROMPT, "tools": [T["read_job_log"], T["write_certificate"]]},
     ]
     if analysis_preset == "quick_demo":
-        subagents[0]["tools"] = [T["run_quick_design"]]
-        subagents[1]["tools"] = [T["read_job_log"]]
+        subagents = [s for s in subagents if s["name"] != "codec-researcher"]
+        next(s for s in subagents if s["name"] == "codec-engineer")["tools"] = [T["run_quick_design"]]
+        next(s for s in subagents if s["name"] == "adversary")["tools"] = [T["read_job_log"]]
     return create_deep_agent(
         model=model or MODEL,
         tools=[T["inventory_files"], T["prepare_archive"], T["estimate_cost"], T["place_synthesis_order"], T["destroy_primary"]],

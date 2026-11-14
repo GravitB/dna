@@ -24,6 +24,7 @@ TOOL_AGENT = {
     "build_profile": "codec-engineer",
     "run_codec_experiment": "codec-engineer",
     "run_codec_sweep": "codec-engineer",
+    "run_learning_experiment": "codec-researcher",
     "estimate_cost": "codec-engineer",
     "stress_test": "adversary",
     "place_synthesis_order": "supervisor",
@@ -875,8 +876,51 @@ def run_quick_design(job_id: str) -> dict:
     return result
 
 
+
+@logged
+def run_learning_experiment(job_id: str, quick: bool = True) -> dict:
+    """Run Erbgut's real risk-learning loop with the fixed CNN decoder in an isolated process.
+
+    Quick mode is exploratory, not benchmark evidence. Full mode uses upstream trial budgets.
+    This tests Erbgut's fixed research file, not the customer's archive; no codec is deployed.
+    Reports and model checkpoints stay associated with this job. May take several minutes.
+    """
+    import json
+    import subprocess
+    import sys
+    import uuid
+
+    root = store.job_dir(job_id) / "learning" / uuid.uuid4().hex
+    root.mkdir(parents=True)
+    policy = _policy(job_id)
+    request = root / "request.json"
+    request.write_text(json.dumps({"profile": dna.profile_to_dict(_profile(job_id, None)),
+                                   "target": policy["target"], "quick": quick}))
+    report = None
+    with (root / "worker.log").open("w") as log:
+        try:
+            subprocess.run([sys.executable, "-m", "lazarus.learning", str(request.resolve()),
+                            str(root.resolve())], check=True, stdout=log, stderr=log,
+                           timeout=600 if quick else 7200)
+        except subprocess.TimeoutExpired:
+            report = {"status": "timed_out", "quick": quick,
+                      "message": "Learning exceeded its time budget; no success or improvement established."}
+        except subprocess.CalledProcessError:
+            report = {"status": "failed", "quick": quick,
+                      "message": "Erbgut learning failed. Inspect worker.log; no improvement established."}
+    if report is None:
+        report = json.loads((root / "report.json").read_text())
+    else:
+        (root / "report.json").write_text(json.dumps(report, indent=2))
+    for path in root.rglob("*"):
+        if path.is_file():
+            artifacts.publish(job_id, path.relative_to(store.job_dir(job_id)).as_posix(), path.read_bytes())
+    store.update(job_id, lambda j: j.setdefault("learning_experiments", []).append(report))
+    return report
+
 ALL_TOOLS = [
     run_quick_design,
+    run_learning_experiment,
     inventory_files,
     prepare_archive,
     build_profile,

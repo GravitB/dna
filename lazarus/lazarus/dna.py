@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict, replace, fields
 from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
@@ -34,7 +34,7 @@ BASE_PROFILES = {"nanopore": "nanopore_budget", "illumina": "illumina_standard"}
 # Extrapolated, not measured: always labeled "modeled" in the UI.
 DECAY_PER_YEAR = 0.002
 
-SETTING_KEYS = ("strand_length", "redundancy", "max_homopolymer", "gc_min", "gc_max", "candidates_per_strand")
+SETTING_KEYS = tuple(f.name for f in fields(EncoderSettings))
 
 
 # ------------------------------------------------------------------ settings and profiles

@@ -668,3 +668,252 @@ fieldset { border:0; padding:0; margin:0; min-width:0; }
  .record {flex-wrap:wrap;}
  header {gap:20px;}
 }
+/* Sequence-specific visual DNA workspace. */
+.dna-explorer .section-heading {
+  align-items: flex-start;
+}
+.dna-explorer .section-heading p {
+  margin-bottom: 12px;
+}
+.dna-body {
+  margin-top: 22px;
+}
+.dna-journey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 14px 0;
+  list-style: none;
+  border-top: 1px solid #dce3eb;
+  border-bottom: 1px solid #dce3eb;
+  font-size: 13px;
+  color: #58697c;
+}
+.dna-journey li {
+  padding: 3px 0;
+}
+.dna-journey .active {
+  color: #2459c4;
+  font-weight: 600;
+}
+.dna-controls {
+  display: flex;
+  gap: 20px;
+}
+.dna-controls label {
+  flex: 1;
+}
+.dna-strand-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin: 16px 0;
+}
+.dna-strand-heading .actions {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.strand-number {
+  margin: 0;
+  font-size: 11px;
+  color: #58697c;
+  max-width: 100px;
+}
+.strand-number input {
+  width: 85px !important;
+  margin: 0 !important;
+  padding: 6px !important;
+}
+.dna-stage {
+  position: relative;
+  height: 420px;
+  border: 1px solid #d4dfef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f3f7ff;
+}
+.dna-stage iframe {
+  height: 100%;
+  width: 100%;
+  border: 0;
+  display: block;
+}
+.dna-stage-label {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  background: #ffffffed;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #435d7a;
+  pointer-events: none;
+}
+.dna-stage-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #435d7a;
+}
+.dna-toolbar {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.dna-toolbar button {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.dna-render-status {
+  font-size: 12px;
+  color: #435d7a;
+  min-height: 20px;
+}
+.dna-complement {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 400;
+}
+.dna-sequence-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+}
+.dna-sequence-heading h3 {
+  margin: 0;
+}
+.dna-sequence-heading button {
+  font-size: 12px;
+}
+.dna-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  margin: 14px 0;
+}
+.dna-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.dna-legend i {
+  height: 10px;
+  width: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.dna-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 14px;
+  background: #f7f9fc;
+  border-radius: 5px;
+}
+.dna-letters button {
+  width: 25px;
+  height: 30px;
+  padding: 0;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+  border-color: transparent;
+  color: #142d4e;
+  border-radius: 3px;
+}
+.base-A {
+  background: #b7b7ed;
+}
+.base-C {
+  background: #c0f3c0;
+}
+.base-G {
+  background: #ffff9b;
+}
+.base-T {
+  background: #ffb4b4;
+}
+.dna-legend .base-A {
+  background: #4747b8;
+}
+.dna-legend .base-C {
+  background: #8cff8c;
+}
+.dna-legend .base-G {
+  background: #ffff33;
+}
+.dna-legend .base-T {
+  background: #ff3333;
+}
+.dna-letters .selected {
+  outline: 2px solid #142d4e;
+  outline-offset: 1px;
+}
+.dna-complement-text {
+  display: block;
+  overflow-wrap: anywhere;
+  letter-spacing: 2px;
+  line-height: 2;
+  font-size: 12px;
+  padding: 12px;
+}
+.dna-note {
+  font-size: 12px;
+  color: #58697c;
+  margin-top: 18px !important;
+}
+@media (max-width: 650px) {
+  .dna-controls,
+  .dna-strand-heading,
+  .dna-sequence-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .dna-controls label {
+    margin: 8px 0;
+  }
+  .dna-strand-heading .actions {
+    justify-content: space-between;
+  }
+  .dna-stage {
+    height: 340px;
+  }
+  .dna-letters button {
+    width: 24px;
+  }
+  .dna-toolbar > .actions {
+    flex-wrap: wrap;
+  }
+}
+.dna-view-range {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.dna-view-range label {
+  margin: 0;
+  font-size: 12px;
+}
+.dna-view-range input[type="range"] {
+  width: 180px;
+  padding: 0;
+  accent-color: #2459c4;
+}
+.dna-view-range span {
+  font-size: 12px;
+  color: #435d7a;
+}
+.archive-layout > div {
+  min-width: 0;
+}
