@@ -81,7 +81,7 @@ export type Archive = ArchiveSummary & {
   mode?: string;
   pending: Pending | null;
   order: {
-    settings: { n_vaults: number };
+    settings: { n_vaults: number; redundancy?: number; coverage?: number };
     cost: { write_usd: number };
     order_files: string[];
   } | null;

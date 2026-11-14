@@ -1098,3 +1098,8 @@ nav a { white-space: nowrap; }
   header { position: static; }
   header nav { overflow-x: auto; gap: 20px; width: 100%; }
 }
+/* Avoid an accidental vertical scrollbar in the archive tab bar. */
+.tabs { overflow-y: hidden; }
+@media (max-width: 720px) {
+  .tabs { position: relative; top: auto; z-index: 1; }
+}
