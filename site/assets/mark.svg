@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="t">
+  <title id="t">Lazarus mark</title>
+  <rect width="64" height="64" rx="14" fill="#0B6E82"/>
+  <path d="M14 18C24 18 40 46 50 46M14 46C24 46 40 18 50 18" fill="none" stroke="#EAF3ED" stroke-width="5" stroke-linecap="round"/>
+  <path d="M22 25V39M32 29V35M42 25V39" stroke="#7FD9C4" stroke-width="4" stroke-linecap="round"/>
+</svg>

@@ -10,5 +10,5 @@ elif [ ! -x lazarus/.venv/bin/python ]; then
   exit 1
 fi
 (cd web && npm ci --silent && npm run build --silent)
-echo "Lazarus on http://localhost:8000"
+echo "Lazarus homepage: http://localhost:8000/   Business workspace: http://localhost:8000/app/"
 cd lazarus && exec .venv/bin/python -m uvicorn lazarus.api:app --host 127.0.0.1 --port 8000
