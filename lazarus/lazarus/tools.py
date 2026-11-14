@@ -18,6 +18,7 @@ from . import crypto, dna, manifest, store, vaults, presentation, artifacts
 from .persistence import get_cloud
 
 TOOL_AGENT = {
+    "run_quick_design": "codec-engineer",
     "inventory_files": "supervisor",
     "prepare_archive": "supervisor",
     "build_profile": "codec-engineer",
@@ -147,7 +148,7 @@ def inventory_files(job_id: str) -> dict:
             }
         )
     store.update(job_id, lambda j: j.update(files=out, status="inventoried"))
-    return {"company": job["company"], "policy": job["policy"], "files": out}
+    return {"company": job["company"], "policy": job["policy"], "files": out, "analysis_preset": job.get("analysis_preset", "standard")}
 
 
 @logged
@@ -263,6 +264,15 @@ def _experiment(
     n_vaults=1,
     years_factor=1.0,
 ):
+    from .experience import QUICK_REDUNDANCIES
+    job = store.load(job_id)
+    if job.get("analysis_preset") == "quick_demo":
+        if redundancy not in QUICK_REDUNDANCIES or strand_length != 110 or not homopolymer_rule or not gc_rule:
+            raise ValueError("Quick demo uses the four bounded redundancy candidates and default DNA rules.")
+        trials = 3
+        pool_id = "all"
+        if coverage not in (16, 9.6) or n_vaults not in (1, 3):
+            raise ValueError("Quick demo uses 16 planned reads and three locations.")
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
     prof = _profile(job_id, coverage, years_factor)
     if pool_id == "all":
@@ -361,6 +371,10 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
     'simulator_b' (structurally different sequencing channel), 'decay_x2' (twice the storage time),
     'low_coverage' (only 60% of the planned reads), 'vault_loss' (one of n_vaults sites destroyed).
     passed = recovery_rate >= target."""
+    job = store.load(job_id)
+    if n_vaults != int(job["policy"].get("n_vaults", n_vaults)):
+        raise ValueError("Use the customer's fixed storage location count.")
+    target = job["policy"].get("target", target)
     kw = dict(channel="a", lost_vaults=0, n_vaults=n_vaults, years_factor=1.0)
     cov = coverage
     if scenario == "simulator_b":
@@ -494,6 +508,9 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
             },
         ),
     )
+    from .experience import dna_summary
+    summary = dna_summary(store.load(job_id))
+    store.update(job_id, lambda j: j.update(dna_summary=summary))
     for v in range(1, n_vaults + 1):
         store.emit(
             job_id, "vault_event", "supervisor", {"vault_id": v, "status": "healthy"}
@@ -826,7 +843,40 @@ Keys are stored in a local demo keystore. Codec, simulators and CNN decoder: Erb
 </body></html>"""
 
 
+@logged
+def run_quick_design(job_id: str) -> dict:
+    """Bounded real picture demo: three trials per point, baseline then CNN and four stress tests. Returns exact measured settings or an honest failure."""
+    from .experience import QUICK_REDUNDANCIES
+    job = store.load(job_id)
+    if job.get("analysis_preset") != "quick_demo":
+        return {"error": "This tool is for the quick picture demo only."}
+    if job.get("quick_design_result"):
+        return job["quick_design_result"]
+    for red in QUICK_REDUNDANCIES:
+        args = dict(job_id=job_id, pool_id="all", redundancy=red, coverage=16, trials=3)
+        normal = run_codec_experiment(**args, decoder="baseline")
+        if normal.get("recovery_rate", 0) < job["policy"]["target"]:
+            continue
+        cost = estimate_cost(job_id=job_id, redundancy=red, coverage=16, n_vaults=3)
+        if not cost.get("within_budget"):
+            continue
+        confirmed = run_codec_experiment(**args, decoder="polish")
+        if confirmed.get("recovery_rate", 0) < job["policy"]["target"]:
+            continue
+        tests = [stress_test(**args, n_vaults=3, decoder="polish", scenario=s) for s in presentation.SCENARIOS]
+        if all(t.get("passed") for t in tests):
+            result = {"settings": dict(redundancy=red, coverage=16, n_vaults=3, strand_length=110,
+                       decoder="polish", homopolymer_rule=True, gc_rule=True), "cost": cost,
+                       "trials_per_point": 3, "stress": tests}
+            store.update(job_id, lambda j: j.update(quick_design_result=result))
+            return result
+    result = {"error": "No quick-demo design passed every measured test within budget. Create a standard archive to explore further."}
+    store.update(job_id, lambda j: j.update(quick_design_result=result))
+    return result
+
+
 ALL_TOOLS = [
+    run_quick_design,
     inventory_files,
     prepare_archive,
     build_profile,

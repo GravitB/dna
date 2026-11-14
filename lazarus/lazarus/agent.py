@@ -95,20 +95,23 @@ def _t(fn) -> StructuredTool:
     return StructuredTool.from_function(fn, name=fn.__name__, description=(fn.__doc__ or "").strip())
 
 
-def build_agent(model: str | None = None):
+def build_agent(model: str | None = None, analysis_preset: str = "standard"):
     from deepagents import create_deep_agent
 
     T = {f.__name__: _t(f) for f in tools.ALL_TOOLS}
     subagents = [
         {"name": "codec-engineer", "description": "Designs the DNA encoding: runs real Erbgut codec sweeps and experiments, returns the cheapest design meeting the target with evidence.",
-         "system_prompt": CODEC_PROMPT, "tools": [T["build_profile"], T["run_codec_sweep"], T["run_codec_experiment"], T["estimate_cost"]]},
+         "system_prompt": CODEC_PROMPT + " For quick_demo call run_quick_design once and return its exact settings; do not run a separate search.", "tools": [T["run_quick_design"], T["build_profile"], T["run_codec_sweep"], T["run_codec_experiment"], T["estimate_cost"]]},
         {"name": "adversary", "description": "Red-teams a proposed design under vault loss, a different sequencing channel, double decay and low coverage.",
-         "system_prompt": ADVERSARY_PROMPT, "tools": [T["stress_test"]]},
+         "system_prompt": ADVERSARY_PROMPT + " For quick_demo use read_job_log to independently review the four measured tests produced by run_quick_design. Do not repeat those tests.", "tools": [T["stress_test"], T["read_job_log"]]},
         {"name": "recovery-engineer", "description": "Runs the disaster recovery drill from the surviving DNA vaults and verifies every file by SHA-256.",
          "system_prompt": RECOVERY_PROMPT, "tools": [T["recover_archive"]]},
         {"name": "compliance", "description": "Writes the Recoverability Certificate from the measured log.",
          "system_prompt": COMPLIANCE_PROMPT, "tools": [T["read_job_log"], T["write_certificate"]]},
     ]
+    if analysis_preset == "quick_demo":
+        subagents[0]["tools"] = [T["run_quick_design"]]
+        subagents[1]["tools"] = [T["read_job_log"]]
     return create_deep_agent(
         model=model or MODEL,
         tools=[T["inventory_files"], T["prepare_archive"], T["estimate_cost"], T["place_synthesis_order"], T["destroy_primary"]],
@@ -156,6 +159,13 @@ class Run:
                                                           bool(args.get("homopolymer_rule", True)), bool(args.get("gc_rule", True)))
                 job = store.load(self.job_id)
                 summary = presentation.proposal(job, args, summary)
+                if not summary["can_approve"]:
+                    from .experience import correction
+                    summary["correction"] = correction(job, args)
+                    if summary["correction"]:
+                        candidate = summary["correction"]
+                        cost = tools.estimate_cost.__wrapped__(self.job_id, **{k:v for k,v in candidate.items() if k != "decoder"})
+                        summary["correction_summary"] = presentation.proposal(job, candidate, cost)
         except Exception as e:  # noqa: BLE001
             summary = {"error": str(e)}
         self.pending = {"tool": tool, "args": args, "summary": summary}
@@ -187,18 +197,27 @@ class Run:
             store.emit(self.job_id, "message", "supervisor", {"text": "Run finished."})
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
-            store.emit(self.job_id, "message", "supervisor", {"text": f"Run failed: {type(e).__name__}: {e}"})
-            store.update(self.job_id, lambda j: j.update(status="error", error=str(e)))
+            raw = str(e).lower()
+            if "prepayment" in raw or "402" in raw:
+                message = "Google could not run the AI analysis because prepaid credits are unavailable. Check Gemini billing or start a new archive with scripted analysis."
+            elif "429" in raw or "quota" in raw:
+                message = "The AI provider's usage limit was reached. Try a new archive later or choose scripted analysis."
+            else:
+                message = f"Analysis stopped ({type(e).__name__}). Review the requirements and create a revised archive, or use scripted analysis."
+            store.emit(self.job_id, "message", "supervisor", {"text": message})
+            store.update(self.job_id, lambda j: j.update(status="error", error=message, finished=True))
 
     def _run_agent(self):
-        agent = build_agent()
         job = store.load(self.job_id)
+        agent = build_agent(analysis_preset=job.get("analysis_preset", "standard"))
         p = job["policy"]
         task = (f"job_id: {self.job_id}\nCompany: {job['company']}\nPolicy: retain {p['retention_years']} years, "
                 f"read technology {p['tech']}, planned coverage {p['coverage']} reads/strand, budget ${p['budget_usd']} "
                 f"(modeled write cost), recovery target {p['target']} (fraction of trials), {p['n_vaults']} vault sites.\n"
                 f"Notes from the customer: {p.get('notes') or 'none'}\nBuild, red-team, order, drill and certify the archive.")
         config = {"configurable": {"thread_id": self.job_id}, "recursion_limit": 300}
+        if job.get("analysis_preset") == "quick_demo":
+            task += "\nQUICK_DEMO: delegate to codec-engineer to call run_quick_design once. It measures baseline, CNN and four stress tests with 3 trials each, bounded to four designs. If it returns an error, stop honestly. Delegate adversary to review the recorded results with read_job_log, then use the exact returned settings for place_synthesis_order (decoder polish). Keep the selected picture and all policy values fixed. No extra experiments. Plan with write_todos first, then continue through both approval interrupts, recovery-engineer and compliance."
         inp = {"messages": [{"role": "user", "content": task}]}
         while True:
             for ns, update in agent.stream(inp, config, stream_mode="updates", subgraphs=True):

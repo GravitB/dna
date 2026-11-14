@@ -61,6 +61,7 @@ def proposal(job, args, cost):
         "can_approve": bool(job["sealed"])
         and set(job["sealed"]) == set(job.get("selected_files", job["sealed"]))
         and all(r["state"] == "passed" for r in rows)
+        and args.get("n_vaults", 3) == job["policy"]["n_vaults"]
         and cost.get("within_budget", False),
     }
 
