@@ -41,8 +41,7 @@ function Stepper({ reached }: { reached: number }) {
           className={i < reached ? "complete" : ""}
           aria-current={i === reached ? "step" : undefined}
         >
-          {i < reached ? "✓ " : ""}
-          {label}
+          <b>{label}</b>
         </li>
       ))}
     </ol>
@@ -822,6 +821,7 @@ export function DecoderPage({ query }: { query: string }) {
     <>
       <div className="page-heading">
         <div>
+          <p className="idx">Reads in · files out</p>
           <h1>DNA Decoder</h1>
           <p>
             Reconstruct files from DNA reads alone: clustering, consensus

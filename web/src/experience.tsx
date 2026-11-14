@@ -1,14 +1,39 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import type { CSSProperties } from "react";
+import { CountUp, IconCheck, IconFile, IconHelix, IconShield, Strand } from "./ui";
 import type { Archive, Ev } from "./types";
 
-export function Journey() {
-  return <div className="journey" aria-label="How the archive works">
-    <div><span>01 / UPLOAD</span><strong>Your original file</strong><p>A picture, a document, a record that matters.</p></div>
-    <b aria-hidden="true">→</b>
-    <div><span>02 / TEST</span><strong>A DNA archive</strong><p>Real encoding. Simulated aging and failures.</p></div>
-    <b aria-hidden="true">→</b>
-    <div><span>03 / RESTORE</span><strong>The same file, verified</strong><p>Recovered bytes checked against the original.</p></div>
-  </div>;
+const STEPS = [
+  { k: "01", tag: "Upload", title: "Your original file", text: "A picture, a document, a record that matters.", icon: <IconFile size={26} /> },
+  { k: "02", tag: "Test", title: "A DNA archive", text: "Real encoding. Simulated aging and failures.", icon: <IconHelix size={26} /> },
+  { k: "03", tag: "Restore", title: "The same file, verified", text: "Recovered bytes checked against the original.", icon: <IconShield size={26} /> },
+];
+
+function FlowArrow() {
+  return <li className="journey-arrow" aria-hidden="true">
+    <svg viewBox="0 0 72 20" preserveAspectRatio="none">
+      <line className="track" x1="2" y1="10" x2="62" y2="10" />
+      <line className="flow" x1="2" y1="10" x2="62" y2="10" />
+      <path className="head" d="M58 4 66 10 58 16" />
+    </svg>
+  </li>;
+}
+
+/* Three blocks joined by flowing arrows. Without `reached` the blocks light up
+ * in turn, as an explainer; with it they show how far this archive has got. */
+export function Journey({ reached }: { reached?: number } = {}) {
+  const live = reached == null;
+  return <ol className={`journey${live ? " journey--loop" : ""}`} aria-label="How the archive works">
+    {STEPS.map((s, i) => <Fragment key={s.k}>
+      {i > 0 && <FlowArrow />}
+      <li className={live ? "" : i < reached! ? "done" : i === reached ? "current" : "todo"} style={{ ["--i" as string]: i } as CSSProperties}>
+        <div className="journey-icon">{s.icon}{!live && i < reached! && <em className="journey-done"><IconCheck size={13} /></em>}</div>
+        <span className="journey-tag">{s.k} / {s.tag.toUpperCase()}</span>
+        <strong>{s.title}</strong>
+        <p>{s.text}</p>
+      </li>
+    </Fragment>)}
+  </ol>;
 }
 
 export function FilePreview({name, src, file, large=false}: {name:string; src?:string; file?:File; large?:boolean}) {
@@ -43,13 +68,15 @@ export function ProgressInfo({job, events}: {job:Archive; events:Ev[]}) {
 
 export function DnaStory({job,id}: {job:Archive;id:string}) {
   const s=job.dna_summary;
+  const lastDrill = job.drills?.[job.drills.length - 1];
+  const reached = lastDrill?.all_verified ? 3 : job.order ? 2 : 1;
   return <section className="dna-story"><div className="section-heading"><h2>Your file’s journey</h2><span className="badge">Simulated DNA storage</span></div>
-    <Journey />
+    <Journey reached={reached} />
     {job.analysis_preset === "quick_demo" && <p className="muted">Quick demo · 3 trials per measured point · real encoding and recovery with simulated DNA conditions.</p>}
     {!job.originals_available && !!job.order && <p>Working originals have been removed. The recovery test reads the DNA archive and uses your separately stored encryption key.</p>}
-    {s ? <><dl className="facts"><div><dt>Total DNA letters</dt><dd>{s.total_letters.toLocaleString()}</dd></div><div><dt>File data + recovery redundancy</dt><dd>{s.data_letters.toLocaleString()}</dd></div><div><dt>Recovery instructions, across locations</dt><dd>{s.manifest_letters.toLocaleString()}</dd></div></dl>
+    {s ? <><dl className="facts stat-tiles"><div><dt>Total DNA letters</dt><dd><CountUp value={s.total_letters} /></dd></div><div><dt>File data + recovery redundancy</dt><dd><CountUp value={s.data_letters} /></dd></div><div><dt>Recovery instructions, across locations</dt><dd><CountUp value={s.manifest_letters} /></dd></div></dl>
       <p>{s.data_strands.toLocaleString()} data strands + {s.manifest_strands.toLocaleString()} manifest strands. Your file spans many sequences.</p>
-      <label>One actual data strand<code className="dna-sequence">{s.example}</code></label>
+      <label>One actual data strand<code className="dna-sequence"><Strand seq={s.example} /></code></label>
       <details><summary>Download DNA sequences</summary><p>FASTA is a text format containing strand names and DNA letters. A single strand cannot restore the whole file. Keep the complete archive and encryption key.</p>
         {job.order?.order_files.filter(p=>p.endsWith('.fasta')).map(p=><a className="dna-download" key={p} href={`/api/jobs/${id}/files/${p.split('/').map(encodeURIComponent).join('/')}`} download>DNA sequences — FASTA text · {p.split('/')[1]}</a>)}
       </details></> : <p>{job.order ? "DNA counts not available for this older archive." : "Your DNA sequence and letter counts will appear once the approved archive has been prepared."}</p>}
