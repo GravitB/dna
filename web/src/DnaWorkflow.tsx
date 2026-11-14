@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Helix3D from "./Helix";
 import { marksFromSegments } from "./dna";
 import { api, date, post } from "./api";
+import { orgHeaders } from "./orgs";
 import type {
   Archive,
   CompareStrand,
@@ -129,7 +130,7 @@ export function DnaExperiment({ id, job }: { id: string; job: Archive }) {
         </label>
       )}
       {sim && <Step2 id={id} sim={sim} decodes={decodes} />}
-      <KeyExport id={id} />
+      <KeyExport id={id} orgId={job.key_management?.mode === "organization" ? job.key_management.org_id : job.org_id} />
     </section>
   );
 }
@@ -662,7 +663,7 @@ function Compare({ id, simId, verdict }: { id: string; simId: string; verdict?: 
   );
 }
 
-function KeyExport({ id }: { id: string }) {
+function KeyExport({ id, orgId }: { id: string; orgId?: string }) {
   const [pass, setPass] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -672,7 +673,7 @@ function KeyExport({ id }: { id: string }) {
     try {
       const r = await fetch(`/api/jobs/${id}/recovery-keys`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...orgHeaders(orgId) },
         body: JSON.stringify({ passphrase: pass }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "Export failed");
@@ -737,6 +738,11 @@ export function DecoderPage({ query }: { query: string }) {
   const [bundle, setBundle] = useState<File | null>(null);
   const [keyFile, setKeyFile] = useState<File | null>(null);
   const [simMeta, setSimMeta] = useState<File | null>(null);
+  const [pkgFile, setPkgFile] = useState<File | null>(null);
+  const [readFiles, setReadFiles] = useState<File[]>([]);
+  const [labSheet, setLabSheet] = useState<File | null>(null);
+  const [keyKind, setKeyKind] = useState<"master" | "keyfile">("master");
+  const [masterFile, setMasterFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [session, setSession] = useState<DecodeSession | null>(null);
   const [sid, setSid] = useState(q.get("session") || "");
@@ -789,18 +795,30 @@ export function DecoderPage({ query }: { query: string }) {
         fd.append("simulation_id", simulation);
       }
       fd.append("key_mode", keyMode);
+      if (source === "upload") {
+        if (!fastaFile) return setError("Choose a FASTA or FASTQ file to decode.");
+        fd.append("fasta_file", fastaFile);
+      }
+      if (keyFile && keyMode === "keyfile") {
+        fd.append("key_file", keyFile);
+        fd.append("passphrase", passphrase);
+      }
     } else {
-      fd.append("key_mode", keyFile ? "keyfile" : "none");
-      if (bundle) fd.append("bundle_file", bundle);
+      if (!readFiles.length) return setError("Choose the sequencing read files (FASTA or FASTQ).");
+      readFiles.forEach((f, i) => fd.append(i ? "reads_files" : "fasta_file", f));
+      if (labSheet) fd.append("lab_sheet", labSheet);
+      if (pkgFile) fd.append("package_file", pkgFile);
+      else if (bundle) fd.append("bundle_file", bundle);
       if (simMeta) fd.append("simulation_metadata", simMeta);
-    }
-    if (source === "upload" || mode === "independent_import") {
-      if (!fastaFile) return setError("Choose a FASTA or FASTQ file to decode.");
-      fd.append("fasta_file", fastaFile);
-    }
-    if (keyFile && (mode === "independent_import" || keyMode === "keyfile")) {
-      fd.append("key_file", keyFile);
-      fd.append("passphrase", passphrase);
+      if (keyKind === "master" && masterFile) {
+        if (!pkgFile) return setError("A master key backup is used together with the archive’s Recovery Package.");
+        fd.append("master_key_file", masterFile);
+        fd.append("passphrase", passphrase);
+      } else if (keyKind === "keyfile" && keyFile) {
+        fd.append("key_mode", "keyfile");
+        fd.append("key_file", keyFile);
+        fd.append("passphrase", passphrase);
+      } else fd.append("key_mode", "none");
     }
     setBusy(true);
     try {
@@ -843,7 +861,7 @@ export function DecoderPage({ query }: { query: string }) {
                 checked={mode === "existing_archive"}
                 onChange={() => setMode("existing_archive")}
               />{" "}
-              A — Existing Lazarus archive
+              A — Existing archive (this server’s archive data and authorized keys)
             </label>
             <label className="inline">
               <input
@@ -851,9 +869,15 @@ export function DecoderPage({ query }: { query: string }) {
                 checked={mode === "independent_import"}
                 onChange={() => setMode("independent_import")}
               />{" "}
-              B — Independent import (FASTA + recovery bundle + key file)
+              B — Independent long-term recovery (reads + Recovery Package + your key)
             </label>
           </fieldset>
+          {mode === "independent_import" && (
+            <p className="fine">
+              Uses nothing stored on this server. For full independence, run the offline decoder shipped in the
+              Recovery Package (decoder/INSTALL.md); this page sends your backup and passphrase to this server once.
+            </p>
+          )}
           {mode === "existing_archive" ? (
             <>
               <label>
@@ -904,28 +928,69 @@ export function DecoderPage({ query }: { query: string }) {
           ) : (
             <>
               <label className="upload">
-                Recovery bundle (recovery_bundle.json, optional)
+                Recovery Package (lazarus-recovery-package-v1.zip)
+                <input type="file" accept=".zip,application/zip" onChange={(e) => setPkgFile(e.target.files?.[0] || null)} />
+                <small>Checked against its SHA-256 sums before use. Holds metadata and wrapped keys only.</small>
+              </label>
+              <label className="upload">
+                Sequencing reads
                 <input
                   type="file"
-                  accept=".json,application/json"
-                  onChange={(e) => setBundle(e.target.files?.[0] || null)}
+                  multiple
+                  accept=".fasta,.fa,.fna,.fastq,.fq,.gz,.txt"
+                  onChange={(e) => setReadFiles(Array.from(e.target.files || []))}
                 />
                 <small>
-                  Non-secret metadata. The decoder reads the manifest from the
-                  DNA itself first and uses the bundle to cross-check hashes.
+                  FASTA or FASTQ (gzip is fine), one file per physical sample, or one file whose headers carry
+                  sample=&lt;pool&gt;. {readFiles.length > 1 && `${readFiles.length} files chosen.`}
                 </small>
               </label>
               <label className="upload">
-                Simulation metadata (optional)
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={(e) => setSimMeta(e.target.files?.[0] || null)}
-                />
+                Lab sample sheet (optional CSV: file,sample_id)
+                <input type="file" accept=".csv,text/csv" onChange={(e) => setLabSheet(e.target.files?.[0] || null)} />
+                <small>Maps each delivered file to a sample id from the package’s sequencing/sample_sheet.csv.</small>
               </label>
+              <fieldset className="mode">
+                <legend>Key</legend>
+                <label className="inline">
+                  <input type="radio" checked={keyKind === "master"} onChange={() => setKeyKind("master")} /> Organization
+                  master key backup
+                </label>
+                <label className="inline">
+                  <input type="radio" checked={keyKind === "keyfile"} onChange={() => setKeyKind("keyfile")} /> Legacy
+                  archive key file
+                </label>
+              </fieldset>
+              {keyKind === "master" ? (
+                <label className="upload">
+                  Master key backup (lazarus-org-master-key-v1)
+                  <input type="file" accept=".json,application/json" onChange={(e) => setMasterFile(e.target.files?.[0] || null)} />
+                </label>
+              ) : (
+                <label className="upload">
+                  Protected key file
+                  <input type="file" accept=".json,application/json" onChange={(e) => setKeyFile(e.target.files?.[0] || null)} />
+                </label>
+              )}
+              <label>
+                Passphrase
+                <input type="password" autoComplete="off" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} />
+                <small>Sent once over this connection; never stored or logged.</small>
+              </label>
+              <details>
+                <summary>Older inputs (no Recovery Package)</summary>
+                <label className="upload">
+                  Recovery bundle (recovery_bundle.json)
+                  <input type="file" accept=".json,application/json" onChange={(e) => setBundle(e.target.files?.[0] || null)} />
+                </label>
+                <label className="upload">
+                  Simulation metadata
+                  <input type="file" accept=".json,application/json" onChange={(e) => setSimMeta(e.target.files?.[0] || null)} />
+                </label>
+              </details>
             </>
           )}
-          {(source === "upload" || mode === "independent_import") && (
+          {source === "upload" && mode === "existing_archive" && (
             <label className="upload">
               FASTA or FASTQ reads
               <input
@@ -939,7 +1004,7 @@ export function DecoderPage({ query }: { query: string }) {
               </small>
             </label>
           )}
-          {(mode === "independent_import" || keyMode === "keyfile") && (
+          {mode === "existing_archive" && keyMode === "keyfile" && (
             <>
               <label className="upload">
                 Protected key file
@@ -1042,6 +1107,12 @@ function DecodeResult({ s }: { s: DecodeSession }) {
               {w}
             </div>
           ))}
+          {sum.evidence && (
+            <p className="info">
+              <b>Evidence:</b> {sum.evidence.text}
+              {!sum.evidence.physical_dna_validated && " Physical DNA recovery is not demonstrated by this run."}
+            </p>
+          )}
           <p className="muted small">
             Input {sum.input.filename} · {sum.input.format.toUpperCase()} ·{" "}
             {sum.input.records.toLocaleString()} records · manifest source:{" "}

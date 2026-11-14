@@ -24,6 +24,7 @@ import type {
 import { Journey, FilePreview, ProgressInfo, DnaStory } from "./experience";
 import { api, date, post } from "./api";
 import { DecoderPage, DnaExperiment } from "./DnaWorkflow";
+import { LongTermRecovery, OrgChoice, OrgPage, orgHeaders, savedOrgs } from "./orgs";
 import {
   CountUp,
   DnaField,
@@ -102,6 +103,7 @@ export default function App() {
   }, []);
   const id = hash.startsWith("#/job/") ? hash.slice(6).split("?")[0] : null;
   const decoderPage = hash.startsWith("#/decoder");
+  const orgPage = hash.startsWith("#/organization");
   return (
     <>
       <header>
@@ -113,7 +115,7 @@ export default function App() {
           <a href="/">Home</a>
           <a
             aria-current={
-              !id && !hash.startsWith("#/new") && !decoderPage
+              !id && !hash.startsWith("#/new") && !decoderPage && !orgPage
                 ? "page"
                 : undefined
             }
@@ -124,6 +126,9 @@ export default function App() {
           <a href="#/new">New archive</a>
           <a aria-current={decoderPage ? "page" : undefined} href="#/decoder">
             DNA Decoder
+          </a>
+          <a aria-current={orgPage ? "page" : undefined} href="#/organization">
+            Organization keys
           </a>
         </nav>
         <span className="simulation">Simulation workspace</span>
@@ -137,7 +142,9 @@ export default function App() {
       </div>
       <main>
         <ErrorBox error={connection} retry={connect} />
-        {decoderPage ? (
+        {orgPage ? (
+          <OrgPage />
+        ) : decoderPage ? (
           <DecoderPage key={hash} query={hash.split("?")[1] || ""} />
         ) : id ? (
           <ArchiveView key={id} id={id} />
@@ -381,6 +388,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
   );
   const [policy, setPolicy] = useState<Policy>(revised?.policy || (sample ? {...defaults, coverage:16} : defaults));
   const [encodingMode, setEncodingMode] = useState("evaluated");
+  const [orgId, setOrgId] = useState(() => (sample ? "" : savedOrgs()[0]?.id || ""));
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelError, setModelError] = useState("");
   useEffect(() => {
@@ -460,8 +468,9 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
     fd.append("use_samples", String(sample));
     fd.append("selected_files", JSON.stringify(selected.map((f) => f.name)));
     files.forEach((f) => fd.append("files", f));
+    if (orgId) fd.append("org_id", orgId);
     try {
-      const r = await api("/jobs", { method: "POST", body: fd });
+      const r = await api("/jobs", { method: "POST", body: fd, headers: orgHeaders(orgId) });
       sessionStorage.removeItem("archive-revision");
       location.hash = `#/job/${r.job_id}`;
     } catch (e) {
@@ -544,13 +553,16 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                   onChange={(e) => setName(e.target.value)}
                 />
               </label>
-              <label>
-                Organization (optional)
-                <input
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                />
-              </label>
+              {!sample && <OrgChoice value={orgId} onChange={setOrgId} />}
+              {!orgId && (
+                <label>
+                  Organization (optional)
+                  <input
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                  />
+                </label>
+              )}
               {sample ? (
                 <div className="info">
                   A small sample picture. Real encoding and recovery, with three trials per measured point. No company data is needed.
@@ -769,7 +781,7 @@ function Create({ sample, llm }: { sample: boolean; llm: boolean }) {
                 </div>
                 <div>
                   <dt>Organization</dt>
-                  <dd>{company}</dd>
+                  <dd>{orgId ? `${savedOrgs().find((o) => o.id === orgId)?.name} (organization master key)` : company}</dd>
                 </div>
                 <div>
                   <dt>Retention</dt>
@@ -1197,6 +1209,7 @@ function ArchiveView({ id }: { id: string }) {
               </p>
             </section>
           )}
+          {job.order && <LongTermRecovery job={job} onChange={refresh} />}
           {job.order && <DnaExperiment id={id} job={job} />}
           {job.order && !job.pending && (
             <section>
