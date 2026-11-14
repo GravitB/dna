@@ -1,0 +1,421 @@
+/* The 3D DNA explorer (Helix3D, DnaExplorer). Rules come from the lab-notebook
+ * stylesheet that introduced the explorer, mapped onto the homepage palette.
+ * Helix3D reads the --A/--C/--G/--T, --helix-* and --sub/--ins/--del colours. */
+:root {
+  --A: #9a6b00;
+  --C: #c41477;
+  --G: #0a7a41;
+  --T: #0b6e82;
+  --sub: #c41477;
+  --ins: #0b6e82;
+  --del: #8a9a90;
+  --helix-backbone: #08130b;
+  --helix-backbone-2: #3e6b52;
+  --helix-rung: #a9c4b2;
+  --on-ink: #f3f8f4;
+  --focus: #0b6e82;
+  --stage: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #eef6f1 70%, #e4efe8 100%);
+}
+
+/* ------------------------------------------------------------------ base colors */
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.dot.base-A {
+  background: var(--A);
+}
+.dot.base-C {
+  background: var(--C);
+}
+.dot.base-G {
+  background: var(--G);
+}
+.dot.base-T {
+  background: var(--T);
+}
+
+/* ------------------------------------------------------------------ 3D DNA */
+.dna-body {
+  margin-top: 18px;
+}
+.dna-controls {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.dna-controls > label {
+  flex: 1 1 180px;
+  margin: 0;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.stepper button.icon {
+  border: 0;
+  width: 34px;
+  min-height: 34px;
+}
+.stepper button.icon:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.strand-number {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.strand-number input {
+  width: 72px !important;
+  min-height: 30px !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+  text-align: center;
+  font-family: var(--mono);
+  border-radius: 999px !important;
+}
+.strand-number .of {
+  white-space: nowrap;
+}
+.stage {
+  position: relative;
+  margin-top: 16px;
+  height: clamp(320px, 46vw, 470px);
+  border-radius: 14px;
+  border: 1px solid var(--rule);
+  background: var(--stage);
+  overflow: hidden;
+}
+.stage-compact {
+  height: 260px;
+  margin: 10px 0 18px;
+}
+.stage-skeleton {
+  margin-top: 16px;
+  height: clamp(320px, 46vw, 470px);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.helix {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+.helix-canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+  animation: fade-in 0.8s var(--ease) both;
+}
+.helix-canvas:active {
+  cursor: grabbing;
+}
+.helix.ambient .helix-canvas {
+  cursor: default;
+}
+.helix-fallback {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.helix-fallback.ambient {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 22px, var(--rule) 22px 24px),
+    transparent;
+  mask: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+}
+.helix-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  pointer-events: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.helix-tip.on {
+  opacity: 1;
+}
+.helix-tools {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+.helix-tools button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.helix-tools button:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.stage-caption {
+  position: absolute;
+  left: 16px;
+  top: 14px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.stage-caption strong {
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 22px;
+  color: var(--ink);
+}
+.stage-legend {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  gap: 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.stage-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ring {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2.5px solid;
+}
+.ring-sub {
+  border-color: var(--sub);
+}
+.ring-ins {
+  border-color: var(--ins);
+}
+.ring-del {
+  border-color: var(--del);
+}
+.dna-toolbar {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 14px 0 4px;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-weight: 400;
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.switch-track {
+  position: relative;
+  width: 36px;
+  height: 21px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--rule-strong);
+  transition: background-color 0.25s var(--ease);
+}
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.25s var(--ease);
+}
+.switch input:checked + .switch-track {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.switch input:checked + .switch-track::after {
+  transform: translateX(15px);
+}
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.dna-letters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
+  gap: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.dna-letters button {
+  position: relative;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s;
+}
+.dna-letters button:hover {
+  transform: translateY(-2px);
+}
+.dna-letters button.tenth::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--rule-strong);
+}
+.dna-letters .base-A {
+  color: var(--A);
+}
+.dna-letters .base-C {
+  color: var(--C);
+}
+.dna-letters .base-G {
+  color: var(--G);
+}
+.dna-letters .base-T {
+  color: var(--T);
+}
+.dna-letters button:hover {
+  background: var(--surface-3);
+}
+.small-button {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+}
+.fine {
+  font-size: 12px;
+  color: var(--rule-strong);
+  margin: 10px 0 0;
+}
+.seq-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0 10px;
+  font-size: 14px;
+}
+.seq-heading small {
+  display: inline;
+  font-family: var(--mono);
+  font-weight: 400;
+}
+
+/* Older rules gave every letter a pastel block of a fixed size. */
+.dna-letters button {
+  width: auto;
+  height: auto;
+  background: transparent;
+  color: inherit;
+}
+.dna-letters .base-A { color: var(--A); }
+.dna-letters .base-C { color: var(--C); }
+.dna-letters .base-G { color: var(--G); }
+.dna-letters .base-T { color: var(--T); }
+#root .dna-letters button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: none; border: 0; background: var(--surface-3); }
+#root .stage { border-radius: 18px; }
+#root .helix-tools button:hover:not(:disabled) { transform: none; box-shadow: none; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The workspace's global button style is for full buttons; keep the
+   explorer's compact controls compact. */
+#root .dna-letters button {
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+#root .dna-letters .selected { box-shadow: 0 0 0 2px var(--ink); }
+#root .helix-tools button,
+#root .stepper button.icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 20px;
+  line-height: 1;
+}
+#root .stepper button.icon { width: 34px; min-height: 34px; }
+#root .helix-tools button:hover:not(:disabled),
+#root .stepper button.icon:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  background: var(--surface-3);
+}
+#root .strand-number { max-width: none; font-size: 12px; }
+#root .helix-tools button svg { display: block; }
+#root .dna-letters .base-A { color: var(--A); }
+#root .dna-letters .base-C { color: var(--C); }
+#root .dna-letters .base-G { color: var(--G); }
+#root .dna-letters .base-T { color: var(--T); }
