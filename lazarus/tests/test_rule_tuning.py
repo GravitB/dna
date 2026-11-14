@@ -22,6 +22,7 @@ def test_sweep_compares_all_rule_combinations(monkeypatch):
 
 def test_stress_test_uses_selected_rules(monkeypatch):
     seen = []
+    monkeypatch.setattr(tools.store, "load", lambda _: {"policy": {"tech": "nanopore", "retention_years": 50}, "sealed": {}})
 
     def experiment(*args, **kwargs):
         seen.append((args[7], args[8]))

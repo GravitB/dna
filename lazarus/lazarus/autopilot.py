@@ -11,10 +11,10 @@ from . import store, tools
 def run(job_id: str, approve=lambda tool, args: True, trials: int = 4) -> dict:
     store.emit(job_id, "message", "supervisor", {"text": "AUTOPILOT (scripted, no LLM) run started."})
     inv = tools.inventory_files(job_id=job_id)
-    cold = [f["name"] for f in inv["files"] if not f["name"].endswith(".txt")]
+    cold = [f["name"] for f in inv["files"]]
     if not cold:
         return {"error": "No cold archive files selected; upload a PDF, CSV, or image."}
-    prep = tools.prepare_archive(job_id=job_id, file_names=cold, tier_notes="*.txt treated as hot working files")
+    prep = tools.prepare_archive(job_id=job_id, file_names=cold, tier_notes="Records explicitly selected by the user")
     pool = prep["reference_pool"]
     cov = float(inv["policy"]["coverage"])
     n_v = int(inv["policy"]["n_vaults"])

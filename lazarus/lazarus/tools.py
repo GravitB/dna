@@ -15,7 +15,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import crypto, dna, manifest, store, vaults
+from . import crypto, dna, manifest, store, vaults, presentation
 
 TOOL_AGENT = {
     "inventory_files": "supervisor",
@@ -47,6 +47,11 @@ def logged(fn):
             result = fn(job_id, *args, **kwargs)
         except Exception as e:  # noqa: BLE001  errors go back to the agent as data
             result = {"error": f"{type(e).__name__}: {e}"}
+            if fn.__name__ == 'recover_archive':
+                result.update(tested_at=store.now(), all_verified=False, files=[], pools={},
+                              vaults_available=[], n_vaults=0, coverage=kwargs.get('coverage'), attempt=kwargs.get('attempt', 0))
+                store.update(job_id, lambda j: (j['drills'].append(result), j.update(status='recovery_failed')))
+                store.emit(job_id, 'drill_result', agent, result)
         store.emit(job_id, "tool_result", agent, {"tool": fn.__name__, "result": result})
         store.update(job_id, lambda j: j["custody"].append(
             {"ts": store.now(), "agent": agent, "tool": fn.__name__, "args": kwargs,
@@ -112,6 +117,13 @@ def prepare_archive(job_id: str, file_names: list[str], tier_notes: str = "") ->
     chosen DNA-tier files into oligo pools of at most ~12 KB. Returns pool ids and the reference pool
     (the largest one) to run codec experiments on. tier_notes: why other files stay off DNA."""
     d = store.job_dir(job_id)
+    job = store.load(job_id)
+    if not file_names or len(file_names) != len(set(file_names)):
+        return {'error': 'Select unique archive files.'}
+    if 'selected_files' in job and set(file_names) != set(job['selected_files']):
+        return {'error': 'Archive must include every user-selected record. Do not exclude selected files.'}
+    if job.get('order'):
+        return {'error': 'This archive is already ordered. Create a revised archive.'}
     uploads = d / "uploads"
     sealed, stream = {}, b""
     for name in file_names:
@@ -232,6 +244,9 @@ def stress_test(job_id: str, pool_id: str, redundancy: float, coverage: float, s
     else:
         return {"error": "scenario must be simulator_b, decay_x2, low_coverage or vault_loss"}
     r = _experiment(job_id, pool_id, redundancy, strand_length, cov, decoder, trials, homopolymer_rule, gc_rule, **kw)
+    r['design'] = presentation.design(store.load(job_id), dict(redundancy=redundancy, coverage=coverage,
+                strand_length=strand_length, n_vaults=n_vaults, decoder=decoder,
+                homopolymer_rule=homopolymer_rule, gc_rule=gc_rule))
     r.update(scenario=scenario, n_vaults=n_vaults, target=target, passed=r["recovery_rate"] >= target, pool_id=pool_id)
     store.emit(job_id, "stress_result", "adversary", r)
     store.update(job_id, lambda j: j["stress"].append(r))
@@ -280,6 +295,11 @@ def place_synthesis_order(job_id: str, redundancy: float, coverage: float, n_vau
     if n_vaults != int(job["policy"]["n_vaults"]):
         return {"error": "vault count must match the customer's policy; start a new job to change it"}
     s = _settings(redundancy, strand_length, homopolymer_rule, gc_rule)
+    if 'selected_files' in job:
+        cost = estimate_cost.__wrapped__(job_id, redundancy, coverage, strand_length, n_vaults, homopolymer_rule, gc_rule)
+        args = dict(redundancy=redundancy, coverage=coverage, strand_length=strand_length, n_vaults=n_vaults, decoder=decoder, homopolymer_rule=homopolymer_rule, gc_rule=gc_rule)
+        if not presentation.proposal(job, args, cost)['can_approve']:
+            return {'error': 'Passing whole-archive tests for this design within budget are required.'}
     pools_out, man_pools = {}, {}
     for pid in job["pools"]:
         enc = dna.encode_bytes(_pool_bytes(job_id, pid), s)
@@ -358,9 +378,9 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
     # A new drill supersedes prior restored artifacts and certification.
     reset_restored(job_id)
     (d / "certificate.html").unlink(missing_ok=True)
-    store.update(job_id, lambda j: (j.pop("certificate", None), j.update(status="recovering")))
+    store.update(job_id, lambda j: (j.pop("certificate", None), j.update(status="recovering", needs_retest=False), j.pop("error", None)))
     def fail(message):
-        result = {"error": message, "files": [], "pools": {}, "all_verified": False,
+        result = {"tested_at": store.now(), "error": message, "files": [], "pools": {}, "all_verified": False,
                   "vaults_available": available, "n_vaults": (store.load(job_id).get("order") or {}).get("settings", {}).get("n_vaults", 0),
                   "coverage": coverage, "attempt": attempt, "seconds": round(time.time() - t0, 2)}
         store.update(job_id, lambda j: (j["drills"].append(result), j.update(status="recovery_failed")))
@@ -441,7 +461,11 @@ def recover_archive(job_id: str, attempt: int = 0, coverage: float | None = None
                 entry["error"] = f"{type(e).__name__}"
         files_out.append(entry)
 
-    result = {"vaults_available": available, "n_vaults": man["n_vaults"], "coverage": cov, "attempt": attempt,
+    expected = store.load(job_id).get('selected_files', list(man['files']))
+    for missing in set(expected) - set(man['files']):
+        files_out.append({'name': missing, 'recovered': False, 'sha256_match': False,
+                          'baseline_would_recover': False, 'polish_would_recover': False, 'error': 'Missing from archive'})
+    result = {"tested_at": store.now(), "vaults_available": available, "n_vaults": man["n_vaults"], "coverage": cov, "attempt": attempt,
               "files": files_out, "pools": pool_results, "all_verified": bool(files_out) and all(f["sha256_match"] for f in files_out),
               "seconds": round(time.time() - t0, 2)}
     for v in available:
@@ -494,12 +518,12 @@ def render_certificate(j: dict, summary: str) -> str:
         f"<tr><td>{e(c['ts'][11:23])}</td><td>{e(c['agent'])}</td><td>{e(c['tool'])}</td><td>{'ok' if c['ok'] else 'error'}</td></tr>"
         for c in j["custody"])
     st = o.get("settings", {})
-    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Recoverability Certificate</title>
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>Recovery Report</title>
 <style>body{{font:14px/1.5 -apple-system,Segoe UI,sans-serif;max-width:860px;margin:40px auto;padding:0 16px;color:#111;background:#fff}}
 h1{{font-size:22px}}table{{border-collapse:collapse;width:100%;margin:8px 0 20px}}td,th{{border:1px solid #ddd;padding:4px 8px;text-align:left}}
 .v{{font-size:20px;font-weight:700;color:{'#0a7a3a' if verdict.startswith('VERIFIED') else '#b00020'}}}small{{color:#666}}</style></head><body>
-<h1>Lazarus Recoverability Certificate</h1>
-<p><b>{e(j['company'])}</b> · job {e(j['id'])} · issued {e(store.now())}</p>
+<h1>Lazarus Recovery Report</h1><p>Simulation evidence. This report is not regulatory certification.</p>
+<p><b>{e(j.get('name') or j['company'])}</b> · {e(j['company'])} · job {e(j['id'])} · issued {e(store.now())}</p>
 <p class="v">{verdict}</p>
 <p>{e(summary)}</p>
 <h3>Policy</h3><p>Retention {j['policy']['retention_years']} years · read technology {e(j['policy']['tech'])} · {st.get('n_vaults', '?')} vault sites</p>
@@ -507,8 +531,8 @@ h1{{font-size:22px}}table{{border-collapse:collapse;width:100%;margin:8px 0 20px
 <p>Redundancy {st.get('redundancy')} · strand length {st.get('strand_length')} · planned reads/strand {st.get('coverage')} ·
 decoder {e(str(st.get('decoder')))} · {o.get('data_strands')} data strands + {o.get('manifest_strands')} manifest strands per vault ·
 {o.get('total_bases')} bases · modeled write cost ${(o.get('cost') or {}).get('write_usd')}</p>
-<h3>Adversarial stress tests</h3><table><tr><th>Scenario</th><th>Redundancy</th><th>Reads</th><th>Recovered</th><th>Result</th></tr>{rows_stress}</table>
-<h3>Recovery drill (primary data destroyed)</h3>
+<h3>Experiment history (includes earlier designs)</h3><table><tr><th>Scenario</th><th>Redundancy</th><th>Reads</th><th>Recovered</th><th>Result</th></tr>{rows_stress}</table>
+<h3>Recovery test</h3><p>Tested: {e(str(last.get('tested_at', 'Not recorded'))) if last else 'Not recorded'}</p>
 <p>Vaults available: {last['vaults_available'] if last else '-'} of {last['n_vaults'] if last else '-'} · reads/strand {last['coverage'] if last else '-'}</p>
 <table><tr><th>File</th><th>SHA-256 match</th><th>Baseline decoder alone</th><th>CNN decoder alone</th><th>SHA-256</th></tr>{rows_files}</table>
 <h3>Chain of custody</h3><table><tr><th>Time (UTC)</th><th>Agent</th><th>Action</th><th>Status</th></tr>{rows_custody}</table>
