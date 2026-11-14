@@ -1048,6 +1048,17 @@ function ArchiveView({ id }: { id: string }) {
         </div>
         <aside>
           <h2>Archive requirements</h2>
+          <div className="info" role="status">
+            {job.storage?.backend === "supabase"
+              ? job.storage.state === "saved"
+                ? "Saved to Supabase"
+                : job.storage.state === "failed"
+                  ? "Cloud save failed. Working copies were retained. Check the connection and create a revised archive to retry."
+                  : job.storage.state === "uploading"
+                    ? "Saving DNA files to Supabase…"
+                    : "Cloud archive not saved yet"
+              : "Stored on this computer"}
+          </div>
           <dl className="facts">
             <div>
               <dt>Retention period</dt>

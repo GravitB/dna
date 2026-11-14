@@ -11,6 +11,9 @@ import csv
 import shutil
 from pathlib import Path
 
+from . import store
+from .persistence import get_cloud
+
 MANIFEST_POOL = "MANIFEST"
 
 
@@ -18,9 +21,16 @@ def vault_dir(job_dir: Path, vault_id: int) -> Path:
     return job_dir / "vaults" / f"vault-{vault_id}"
 
 
-def write_vaults(job_dir: Path, n_vaults: int, pools: dict[str, list[str]], manifest_strands: list[str]) -> list[str]:
+def write_vaults(
+    job_dir: Path,
+    n_vaults: int,
+    pools: dict[str, list[str]],
+    manifest_strands: list[str],
+) -> list[str]:
     """Write order.fasta + order.csv per vault. Returns written paths (relative to job_dir)."""
-    rows: dict[int, list[tuple[str, int, str]]] = {v: [] for v in range(1, n_vaults + 1)}
+    rows: dict[int, list[tuple[str, int, str]]] = {
+        v: [] for v in range(1, n_vaults + 1)
+    }
     for v in rows:
         rows[v] += [(MANIFEST_POOL, i, s) for i, s in enumerate(manifest_strands)]
     for pool_id, strands in pools.items():
@@ -40,18 +50,34 @@ def write_vaults(job_dir: Path, n_vaults: int, pools: dict[str, list[str]], mani
             w.writerow(["name", "sequence", "length"])
             for pool_id, i, s in items:
                 w.writerow([f"{pool_id}_{i:05d}", s, len(s)])
-        written += [str((d / "order.fasta").relative_to(job_dir)), str((d / "order.csv").relative_to(job_dir))]
+        written += [
+            str((d / "order.fasta").relative_to(job_dir)),
+            str((d / "order.csv").relative_to(job_dir)),
+        ]
     return written
 
 
 def read_vault(job_dir: Path, vault_id: int) -> dict[str, dict[int, str]] | None:
     """Return {pool_id: {index: strand}} or None if the vault is gone."""
-    path = vault_dir(job_dir, vault_id) / "order.fasta"
-    if not path.exists():
-        return None
+    cloud = get_cloud()
+    if cloud:
+        job = store.load(job_dir.name)
+        if (
+            not job.get("order")
+            or job.get("vault_locations", {}).get(str(vault_id)) != "healthy"
+        ):
+            return None
+        text = cloud.get_artifact(
+            job_dir.name, f"vaults/vault-{vault_id}/order.fasta"
+        ).decode()
+    else:
+        path = vault_dir(job_dir, vault_id) / "order.fasta"
+        if not path.exists():
+            return None
+        text = path.read_text()
     out: dict[str, dict[int, str]] = {}
     header = None
-    for line in path.read_text().splitlines():
+    for line in text.splitlines():
         if line.startswith(">"):
             header = line[1:]
         elif header:
@@ -62,18 +88,47 @@ def read_vault(job_dir: Path, vault_id: int) -> dict[str, dict[int, str]] | None
 
 
 def list_vaults(job_dir: Path) -> list[dict]:
+    if get_cloud():
+        job = store.load(job_dir.name)
+        return [
+            {"vault_id": int(v), "status": s}
+            for v, s in sorted(
+                job.get("vault_locations", {}).items(), key=lambda x: int(x[0])
+            )
+        ]
     base = job_dir / "vaults"
     if not base.exists():
         return []
     out = []
     for d in sorted(base.iterdir()):
         if d.is_dir() and d.name.startswith("vault-"):
-            out.append({"vault_id": int(d.name.split("-")[1]), "status": "healthy" if (d / "order.fasta").exists() else "destroyed"})
+            out.append(
+                {
+                    "vault_id": int(d.name.split("-")[1]),
+                    "status": "healthy"
+                    if (d / "order.fasta").exists()
+                    else "destroyed",
+                }
+            )
     return out
 
 
 def destroy_vault(job_dir: Path, vault_id: int) -> bool:
     d = vault_dir(job_dir, vault_id)
+    if get_cloud():
+        job = store.load(job_dir.name)
+        existed = job.get("vault_locations", {}).get(str(vault_id)) == "healthy"
+        if existed:
+            store.update(
+                job_dir.name,
+                lambda j: (
+                    j["vault_locations"].update({str(vault_id): "destroyed"}),
+                    j.update(needs_retest=True),
+                ),
+            )
+        for f in ("order.fasta", "order.csv"):
+            (d / f).unlink(missing_ok=True)
+        return existed
     existed = (d / "order.fasta").exists()
     for f in ("order.fasta", "order.csv"):
         (d / f).unlink(missing_ok=True)

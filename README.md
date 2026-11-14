@@ -116,6 +116,10 @@ The tests cover encryption and tamper detection, decoding the manifest with only
 corrupted strands never producing wrong bytes, recovery from 2 of 3 vaults, and the full deep agent
 graph with human approval, driven by a scripted fake model so no API key is needed.
 
+## Cloud storage
+
+For private DNA storage, archive history, and recovery from another computer, see [Supabase setup](docs/SUPABASE.md). Local storage remains available until cloud setup has been verified.
+
 ## Repository layout
 ```
 lazarus/lazarus/dna.py        thin wrapper over Erbgut (the only module that imports it)

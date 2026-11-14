@@ -9,20 +9,23 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import mimetypes
 import os
 import threading
 from pathlib import Path
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from . import agent, store, tools, vaults, presentation  # noqa: E402
+from . import agent, store, tools, vaults, presentation, artifacts
+from .persistence import get_cloud, StorageError  # noqa: E402
 
 MAX_UPLOAD_BYTES = 200_000
 SAMPLE_DIR = Path(__file__).resolve().parents[2] / "sample_data" / "northstar_bio"
@@ -33,6 +36,9 @@ from contextlib import asynccontextmanager, contextmanager
 
 @asynccontextmanager
 async def lifespan(app):
+    cloud = get_cloud()
+    if cloud:
+        await asyncio.to_thread(cloud.check)
     # Persisted artifacts remain readable, but in-memory agent execution cannot survive a restart.
     for saved in store.list_jobs():
         if saved["status"] in (
@@ -76,9 +82,26 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(StorageError)
+async def storage_error(request, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(FileNotFoundError)
+async def missing_archive(request, exc):
+    return JSONResponse(
+        status_code=404, content={"detail": "Archive or artifact not found."}
+    )
+
+
 @app.get("/api/health")
 def health():
-    return {"ok": True, "llm": agent.has_model_key(), "model": agent.MODEL}
+    return {
+        "ok": True,
+        "llm": agent.has_model_key(),
+        "model": agent.MODEL,
+        "storage_backend": "supabase" if get_cloud() else "local",
+    }
 
 
 @app.get("/api/samples")
@@ -212,6 +235,10 @@ def get_job(job_id: str):
     r = agent.RUNS.get(job_id)
     j["pending"] = r.pending if r else None
     j["presentation"] = presentation.view(j, j["pending"])
+    j["storage"] = j.get("storage") or {
+        "backend": "supabase" if get_cloud() else "local",
+        "state": "pending" if get_cloud() else "local",
+    }
     return j
 
 
@@ -353,15 +380,18 @@ async def drill(job_id: str, body: dict | None = None):
 
 @app.get("/api/jobs/{job_id}/files/{name:path}")
 def job_file(job_id: str, name: str):
-    base = store.job_dir(job_id).resolve()
-    p = (base / name).resolve()
-    if (
-        not p.is_relative_to(base)
-        or not p.is_file()
-        or p.parts[len(base.parts)] in ("kms",)
-    ):
-        raise HTTPException(404)
-    return FileResponse(p)
+    try:
+        content = artifacts.download(job_id, name)
+    except ValueError:
+        raise HTTPException(404, "Archive artifact not found")
+    return Response(
+        content,
+        media_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(Path(name).name, safe='')}",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 if WEB_DIST.exists():

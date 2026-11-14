@@ -59,6 +59,7 @@ export type Drill = {
   pools: Record<string, unknown>;
 };
 export type Archive = ArchiveSummary & {
+  storage?: { backend: "local" | "supabase"; state: string };
   policy: Policy;
   selected_files?: string[];
   intake_files?: FileInfo[];
