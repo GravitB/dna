@@ -1,272 +1,474 @@
-# Lazarus: an AI DNA archivist for regulated enterprises
+<div align="center">
 
-**HackPrinceton tracks:** Business & Enterprise (main) and Best use of deepagents by LangChain (special).
+<img src="docs/assets/lazarus-logo.png" alt="Lazarus logo: a DNA double helix in a teal app icon" width="220" />
 
-New to DNA storage? Start with [the biology, explained from zero](docs/BIOLOGY.md), then
-[how Lazarus works end to end](docs/HOW_IT_WORKS.md).
+<h1>Lazarus</h1>
 
-Some records have to survive for decades: clinical-trial files (FDA 21 CFR Part 11), bank records
-(SEC 17a-4), legal holds and media masters. DNA is the densest and longest-lasting storage medium
-there is. It is also very noisy, and nobody at a normal company knows how to design a DNA archive or
-prove that it can be read back.
+<h3>An AI engineer that writes your company's records into DNA, then proves it can read them back</h3>
 
-Lazarus is a LangChain **deep agent** that does that job. It takes your files and retention policy,
-runs real DNA codec experiments, attacks its own design until it holds, asks you to approve the cost,
-writes vendor-ready DNA synthesis orders across several vault sites, then deletes the originals and
-proves it can rebuild them from DNA alone. The result is a **Recoverability Certificate** with a full
-chain of custody.
+<p><em>A LangChain deep agent designs a DNA archive for files that must survive for decades, attacks its own design until it holds, stops for a human before spending money or deleting anything, and proves recovery byte for byte with SHA-256.</em></p>
 
-Built on [Erbgut](https://github.com/timarnoldev/hackmit2026) (HackMIT 2026). Erbgut provides the
-DNA Fountain encoder, the sequencing simulators calibrated on real Nanopore reads, and the CNN decoder
-that we use unchanged. See [Credits](#credits).
+<br />
 
-Approved archives include an interactive [DNA viewer](docs/VISUAL_DNA.md), powered by locally hosted
-oxView. Explore the archive's saved DNA sequences in 3D or animate a strand being built.
+<img src="https://img.shields.io/badge/%F0%9F%8F%86%20HACKPRINCETON%20FALL%202026-000000?style=for-the-badge" alt="HackPrinceton Fall 2026" /><img src="https://img.shields.io/badge/BUSINESS%20%26%20ENTERPRISE%20%C2%B7%20BEST%20USE%20OF%20DEEPAGENTS-0f9b8e?style=for-the-badge" alt="Business and Enterprise, Best use of deepagents" />
+
+<br /><br />
+
+<img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+" />
+<img src="https://img.shields.io/badge/FastAPI-API%20%2B%20live%20events-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
+<img src="https://img.shields.io/badge/LangChain-deepagents-1C3C3C?logo=langchain&logoColor=white" alt="LangChain deepagents" />
+<img src="https://img.shields.io/badge/LangGraph-human%20in%20the%20loop-1C3C3C?logo=langchain&logoColor=white" alt="LangGraph human in the loop" />
+<img src="https://img.shields.io/badge/PyTorch-CNN%20decoder-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch CNN decoder" />
+<img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React 18" />
+<br />
+<img src="https://img.shields.io/badge/Gemini-2.5%20Flash%20supervisor-8E75B2?logo=googlegemini&logoColor=white" alt="Gemini supervisor" />
+<img src="https://img.shields.io/badge/Claude-fallback%20model-D97757?logo=anthropic&logoColor=white" alt="Claude fallback" />
+<img src="https://img.shields.io/badge/three.js-3D%20helix-000000?logo=threedotjs&logoColor=white" alt="three.js" />
+<img src="https://img.shields.io/badge/Supabase-cloud%20archives-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
+<img src="https://img.shields.io/badge/AES--256--GCM-key%20never%20in%20DNA-0b6e82" alt="AES-256-GCM" />
+<br />
+<img src="https://img.shields.io/badge/pytest-86%20passing-0A9EDC?logo=pytest&logoColor=white" alt="86 pytest tests passing" />
+<img src="https://img.shields.io/badge/Vitest-39%20passing-6E9F18?logo=vitest&logoColor=white" alt="39 Vitest tests passing" />
+<img src="https://img.shields.io/badge/HackPrinceton-Business%20%26%20Enterprise%20Track-0a7a41" alt="Business and Enterprise track" />
+
+<br /><br />
+
+🧬 Built at <b>HackPrinceton Fall 2026</b> · Princeton University · Business &amp; Enterprise · Best use of deepagents by LangChain
+
+<br />
+
+<a href="docs/DEEPAGENTS_DEMO.md"><b>Judge demo</b></a> ·
+<a href="docs/HOW_IT_WORKS.md"><b>How it works</b></a> ·
+<a href="docs/ENCODER_DECODER_DEEP_DIVE.md"><b>Encoder &amp; decoder deep dive</b></a> ·
+<a href="docs/BIOLOGY.md"><b>DNA from zero</b></a> ·
+<a href="docs/BOOTSTRAP.md"><b>Bootstrap spec</b></a>
+
+</div>
 
 ---
 
-## How it works
+## 🧬 Overview
 
-```
- files + policy
-      │
-      ▼
- SUPERVISOR (deep agent, write_todos plan)
-  ├─ inventory_files ─ decides the DNA tier (cold, immutable files only)
-  ├─ prepare_archive ─ zstd + AES-256-GCM (key stays in customer KMS), one stream, balanced pools
-  ├─ task → CODEC ENGINEER ─ run_codec_sweep / run_codec_experiment / estimate_cost
-  │                           real Erbgut encode → simulated sequencing → decode → recover
-  ├─ task → ADVERSARY ─ stress_test: lose a vault site, a different sequencer (Erbgut Simulator B),
-  │                     twice the storage time, 60% of the reads.  Fail → supervisor redesigns
-  ├─ place_synthesis_order ◀── HUMAN APPROVAL (deepagents interrupt_on)
-  │     order.fasta / order.csv per vault + DNA-encoded bootstrap manifest in every vault
-  ├─ destroy_primary ◀── HUMAN APPROVAL      (originals and staging copies deleted)
-  ├─ task → RECOVERY ENGINEER ─ recover_archive: read surviving vaults, decode the manifest with the
-  │                             one-page bootstrap spec, decode every pool with the baseline AND the
-  │                             CNN, decrypt, check SHA-256, retry deeper on failure
-  └─ task → COMPLIANCE ─ read_job_log → write_certificate
-```
+Some records have to outlive the systems that store them. Clinical-trial files, bank records, legal
+holds and media masters must stay readable for 25 years or more, while disks and tapes need replacing
+every few years. DNA is the densest, longest-lasting storage medium known, but it is noisy, and no
+normal company knows how to design a DNA archive or prove it can be read back.
 
-The LLM never writes DNA letters and never invents numbers. Every recovery rate, cost and verdict comes
-from a tool that runs the Erbgut codec.
+**Lazarus is the engineer they don't have.** Upload your files and your retention policy. A team of
+AI agents designs the archive, measures it, tries to break it, asks you to approve the cost, writes
+vendor-ready DNA synthesis orders across several vault sites, then deletes the working copies and
+proves it can rebuild every file from DNA alone.
 
-### What makes it a deep agent (and not a chatbot)
-| deepagents feature | How Lazarus uses it |
+> **Agents design. The DNA decides.** The LLM never writes a DNA letter and never invents a number.
+> Every recovery rate, cost and verdict comes from a tool that runs the real DNA codec, and success
+> means a byte-exact SHA-256 match. Nothing less counts.
+
+1. **Triage.** The supervisor inventories the files and plans the job with `write_todos`.
+2. **Seal.** Each file is compressed (zstd) and encrypted (AES-256-GCM). The key stays in the
+   customer's key store; the DNA only ever holds a key id.
+3. **Design.** The codec engineer runs real encode → simulate → decode experiments and finds the
+   cheapest design that meets the recovery target.
+4. **Attack.** The adversary hits that design with a lost vault site, a different sequencer, twice the
+   storage time and 40% fewer reads. Any failure sends it back for a redesign and a full retest.
+5. **Approve and write.** A human approves the modeled cost. Lazarus writes `order.fasta` files per
+   vault, plus a self-describing manifest stored in the DNA itself.
+6. **Prove.** After a second approval the working copies are deleted. The recovery engineer rebuilds
+   every file from the surviving vaults, checks SHA-256, and the compliance agent writes the report.
+
+All DNA here is digital: nothing is synthesized, sequenced or purchased. The sequencing channel is
+calibrated on real Nanopore reads; storage decay and costs are modeled and labeled that way.
+
+---
+
+## 💸 Why it matters
+
+Enterprises pay every year to keep power, cooling and floor space running for data almost nobody
+touches, and pay again every few years to copy it onto the next generation of hardware.
+
+| The number | Why it hurts |
 |---|---|
-| Planning (`write_todos`) | The supervisor plans the archive job; the UI shows the live todo list |
-| Subagents with their own context | codec-engineer, adversary, recovery-engineer, compliance, each with its own tools and prompt |
-| Virtual filesystem | The supervisor records the design decision and evidence in `/design_notes.md` |
-| Human in the loop (`interrupt_on`) | Spending money (synthesis order) and destroying data (drill) both pause for a human |
-| Tool use on real computation | Every tool runs the actual Erbgut DNA codec |
-| Fail → revise → retest loop | When the adversary breaks a design, the supervisor raises redundancy or coverage and retests |
+| **~218 ZB** of data generated worldwide in 2025 ([IDC](https://www.idc.com/resource-center/definitions/what-are-the-global-datasphere-and-global-storagesphere/)) | The pile only grows, and every byte kept on disk needs powered, cooled hardware. |
+| **415 TWh** used by data centres in 2024, about **1.5%** of the world's electricity, heading to **~945 TWh by 2030** ([IEA](https://www.iea.org/reports/energy-and-ai/executive-summary)) | Storage that sits idle still draws power and occupies racks. |
+| **74.6%** of enterprise data already sits in warm, cool or cold tiers, and **over 60%** of data-lake volume is cold or rarely accessed ([IDC survey of 763 IT leaders, 2026](https://www.westerndigital.com/en-ua/company/newsroom/press-releases/2026/2026-09-09-wd-new-research-reveals-the-reshaping-of-ai-infrastructure-economics-as-data-persists-and-compounds), sponsored by Western Digital) | Most stored data is archive data. It does not need a spinning disk. |
+| **25 years** minimum retention for EU clinical-trial master files, on media that must stay complete and legible for the whole period ([EU 536/2014, Art. 58](https://eur-lex.europa.eu/eli/reg/2014/536/oj)) | That outlives several generations of disks and tapes. |
+| Since **LTO-8**, tape drives read only **one generation back** ([LTO migration overview](https://wasabi.com/blog/data-management/lto-tape-data-migration-to-cloud-storage)) | Long archives must be re-copied again and again just to stay readable. |
 
-### The deep learning part
-Recovery uses Erbgut's **PolishDecoder**, a 1D CNN that corrects the majority-vote consensus. It was
-trained on real Microsoft Nanopore reads (`checkpoints/polish/polish.pt`). Every drill decodes the same
-reads with both decoders and shows the difference per file and per pool. In our runs the CNN recovered
-pools that the baseline lost. It runs on CUDA or Apple MPS when available.
+**DNA changes the math.** It has been written at **215 petabytes per gram**
+([Erlich & Zielinski, *Science* 2017](https://pubmed.ncbi.nlm.nih.gov/28254941/)), and readable DNA has
+been recovered from **two-million-year-old** sediment ([Kjær et al., *Nature* 2022](https://www.nature.com/articles/s41586-022-05453-y)).
+At that density, 1 TB is about **4.65 mg** of DNA material, and the world's entire 2025 data output
+would be about **one tonne, roughly one cubic metre** (a modeled extrapolation, the same math as the
+app's storage scale explorer). Stored cool and dry, it needs no power and never needs migrating: DNA
+is the one format people will always know how to read.
 
-### Why it is a business
-- **Buyer:** records and compliance officers at pharma, banks, law firms and media archives.
-- **Deliverable:** a Recoverability Certificate (evidence for auditors) and vendor-neutral FASTA orders.
-- **Revenue:** a fee per certified archive, plus a subscription for recurring recovery drills.
-- **Honesty:** DNA is not cheaper than cloud for everyday data. Lazarus only puts cold, immutable,
-  long-retention files in the DNA tier and keeps everything else on conventional storage.
-
-### The "forgotten decoder" problem
-In 50 years, the strands may survive while the software settings that wrote them are long gone. Every
-vault therefore also holds the **manifest** (encoder settings, file offsets, hashes, vault layout),
-written to DNA with one fixed, published setting. A future reader needs only the one-page
-[bootstrap spec](docs/BOOTSTRAP.md) to read the manifest, and the manifest explains everything else.
+**What stops companies today is not the chemistry. It is the engineering and the proof.** That is
+exactly what Lazarus does.
 
 ---
 
-## Run it
+## ✨ Highlights
 
-### Picture demo
+| | |
+|---|---|
+| 🤖 **Deep agent engineer** | A supervisor plans with `write_todos` and delegates to five specialist subagents, each with its own context, prompt and tools. |
+| 🧬 **Real DNA codec** | Fountain-coded 110-letter strands with a checksum on every strand and chemistry rules built in (no runs of 4+ identical letters, 40–60% GC). |
+| 🧠 **CNN decoder** | A 0.8M-parameter network corrects the classic majority vote: **82.3% vs 67.2%** exact strands at 6 reads on held-out real Nanopore data. |
+| 🛡️ **Red team built in** | Every design is attacked: lost vault site, a structurally different sequencer, twice the storage time, 40% fewer reads. |
+| 👤 **Human gates** | Spending money and destroying originals both pause for explicit approval (`interrupt_on`). Approve, edit or reject. |
+| 🔐 **Key never in DNA** | zstd + AES-256-GCM. Stolen DNA is unreadable ciphertext; a single flipped bit fails the GCM tag. |
+| 📜 **Self-describing archive** | The manifest is written into DNA with one fixed, published setting. In 50 years a one-page spec is enough to start reading. |
+| 🏛️ **Multi-vault placement** | Strand *i* goes to vault *i* mod *n*, every vault holds a full manifest copy, and orders are vendor-ready FASTA and CSV. |
+| 🔬 **Independent decoder** | FASTA/FASTQ in, SHA-256-verified files out, even on a machine with no copy of the archive (passphrase-protected key file). |
+| 📏 **Storage scale explorer** | See your exact file as printed paper, hard drives and DNA, from a single file to the world's annual data. |
 
-Choose **Try a picture demo** to encode a bundled 412-byte PNG, test the real codec, and restore the same image.
-The quick preset fixes 50 simulated years, three locations and 16 planned reads per strand. It measures three trials
-per point, searches only redundancy 0.8, 1.2, 1.6 and 2.0, and checks normal recovery plus all four stress scenarios.
-The Gemini supervisor delegates the measured design and evidence review to specialists; scripted analysis remains
-available under Advanced. If no design passes within the modeled budget, the demo reports that failure.
+---
 
-The file preview is removed when the job's working originals are deleted. The restored preview is served only after
-hash verification. DNA letter counts come from the emitted FASTA files and include manifest copies across locations.
-Modelled DNA costs do not include actual Gemini API charges. API usage may consume credits on your provider account.
+## 📸 Screenshots
 
-Ordinary uploads use the standard search and accept up to 200 KB total. Existing archives continue to work; missing
-legacy measurements are shown as unavailable rather than reconstructed from guesses.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/homepage.png" alt="Lazarus homepage with an animated DNA helix" /></td>
+    <td width="50%"><img src="docs/assets/screenshots/workspace.png" alt="Business workspace showing archives and recovery status" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Homepage.</b> A scrolling story of how DNA archives are written, damaged and recovered.</td>
+    <td align="center"><b>Business workspace.</b> Every archive, its recovery status, and the upload → test → restore journey.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/assets/screenshots/recovery.png" alt="Recovery evidence: all selected files restored unchanged" /></td>
+    <td width="50%"><img src="docs/assets/screenshots/decoder.png" alt="DNA Decoder: reconstruct files from DNA reads alone" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Recovery evidence.</b> 3 of 3 records rebuilt from DNA after 50 simulated years, each with a SHA-256 match.</td>
+    <td align="center"><b>DNA Decoder.</b> Reads in, verified files out: clustering, consensus, Fountain recovery, decryption.</td>
+  </tr>
+</table>
 
-Requirements: Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, git.
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+  subgraph IN["📥 Customer"]
+    F["Records + retention policy<br/>PDF · CSV · images"]
+  end
+  subgraph AG["🤖 Deep agent: plans, delegates, revises"]
+    S["Supervisor<br/>write_todos plan<br/>/design_notes.md"]
+    RS["codec-researcher<br/>learned risk model"]
+    E["codec-engineer<br/>experiments + cost"]
+    A["adversary<br/>4 stress scenarios"]
+    RE["recovery-engineer<br/>disaster drill"]
+    C["compliance<br/>recovery report"]
+  end
+  subgraph CORE["🧬 Deterministic DNA core: every number comes from here"]
+    SEAL["zstd + AES-256-GCM<br/>SHA-256 fingerprints"]
+    ENC["Fountain encoder<br/>110-letter strands"]
+    SIM["Calibrated channel<br/>simulators A + B"]
+    DEC["Clustering → vote → CNN<br/>Fountain recovery"]
+  end
+  H{{"👤 Human approval<br/>spend · delete originals"}}
+  V[("🏛️ Vaults<br/>order.fasta per site<br/>+ DNA manifest")]
+  OUT["✅ SHA-256-verified files<br/>+ recovery report"]
+
+  F --> S
+  S --> RS
+  S --> E
+  S --> A
+  S --> RE
+  S --> C
+  S --> SEAL --> ENC
+  E --> ENC
+  A --> SIM
+  ENC --> H --> V
+  V --> SIM --> DEC
+  RE --> DEC
+  DEC --> OUT
+```
+
+**Agents never touch the bytes.** The deep agent decides *what to test*; deterministic code decides
+*what is true*. LLM output only reaches the DNA as validated tool arguments, and only after a human
+says yes.
+
+<details>
+<summary><b>Life of one archive</b></summary>
+
+1. `inventory_files`: size, type and SHA-256 of every upload, plus the retention policy.
+2. `prepare_archive`: compress, encrypt, join into one stream, split into balanced pools of ≤ 12 KB.
+3. **codec-researcher** → `prepare_learned_model`: optionally trains a risk model that predicts which
+   strands the decoder will get wrong on this customer's channel.
+4. **codec-engineer** → sweeps and experiments: real encode → simulated sequencing → decode → recover,
+   across redundancy and coverage, then `estimate_cost`.
+5. **adversary** → `stress_test` × 4 on the whole archive. Any failure: the supervisor raises
+   redundancy or coverage and the adversary reruns **all four** scenarios on the new design.
+6. The decision and its evidence go into `/design_notes.md` in the agent's virtual filesystem.
+7. `place_synthesis_order` **pauses for human approval**, then writes `order.fasta` and `order.csv`
+   per vault and the DNA-encoded manifest.
+8. `destroy_primary` **pauses for human approval**, then deletes the working originals.
+9. **recovery-engineer** → `recover_archive`: reads the surviving vaults, decodes the manifest with the
+   bootstrap spec, decodes every pool with the classic decoder and the CNN, decrypts, checks SHA-256.
+10. **compliance** → `read_job_log` + `write_certificate`: a report that states only facts in the log.
+
+</details>
+
+<details>
+<summary><b>The DNA format, in one screen</b></summary>
+
+```
+|<-- 16 letters -->|<-------------------- 94 letters -------------------->|
+|   seed (32 bits) |  172 bits of XOR-mixed data  +  CRC-16, whitened      |
+```
+
+- **Fountain code.** Each strand carries the XOR of a few data chunks chosen by its seed. Any large
+  enough subset of strands rebuilds the pool, so lost strands are fine.
+- **Checksums at three levels.** CRC-16 per strand, CRC-32 per pool, SHA-256 per file. A wrong strand
+  is thrown away instead of corrupting the file.
+- **Chemistry rules for free.** A strand that breaks a rule is replaced by the next seed's strand,
+  which costs no density.
+- **Bootstrap manifest.** 4,096 bytes, 382 strands, a full copy in every vault, written with one
+  published setting so a future reader can always start.
+
+Every step, explained from zero: [encoder & decoder deep dive](docs/ENCODER_DECODER_DEEP_DIVE.md).
+
+</details>
+
+<details>
+<summary><b>Verdicts</b></summary>
+
+| Verdict | Meaning |
+|---|---|
+| **PASS** | Every expected file was rebuilt and its SHA-256 matches. |
+| **PARTIAL** | Some files match, others don't. The report says which and why. |
+| **FAIL** | No file matches. Similar-looking DNA never counts as recovery. |
+| **INCOMPLETE** | Something required was missing (manifest, key, decoder). The report names it. |
+
+</details>
+
+---
+
+## 🤖 Why deep agents
+
+Designing a DNA archive is not a question you can answer in one prompt. It is a long engineering job:
+dozens of measurements, dead ends, trade-offs between cost and safety, and two decisions you cannot
+undo. That is exactly the shape of work LangChain's **deepagents** was built for, and it is why Lazarus
+is a deep agent and not a chatbot.
+
+- **It plans like an engineer.** The supervisor writes the job as a todo list with `write_todos` and
+  keeps it updated. The workspace streams that plan live, so you watch the work happen.
+- **It hires specialists.** Five subagents, each with its own context window, prompt and tool set. The
+  codec engineer never sees recovery noise; the adversary never sees the engineer's hopes.
+- **It argues with itself.** The engineer proposes the cheapest design. The adversary's only job is to
+  break it. A failure forces a redesign, and every new design must pass all four attacks again:
+  results from an older design never count.
+- **It keeps its reasoning on file.** Design decisions and evidence are written to `/design_notes.md`
+  and `/learning-evidence.md` in the agent's virtual filesystem, next to a full custody log.
+- **It stops where humans must decide.** `interrupt_on` pauses before spending money
+  (`place_synthesis_order`) and before destroying data (`destroy_primary`). You can approve, edit the
+  arguments or reject, and LangGraph's checkpointer resumes exactly where it stopped.
+- **It cannot make things up.** The model never writes DNA letters or numbers. Every claim is a tool
+  result from the real codec, and the compliance agent may only state facts found in the log.
+
+| | One LLM call | Lazarus deep agent |
+|---|---|---|
+| Multi-step plan | ✗ | `write_todos`, visible live |
+| Real experiments | ✗ | encode → simulate → decode via tools |
+| Focused context | one overloaded prompt | isolated context per subagent |
+| Catches its own bad design | ✗ | adversary + redesign loop |
+| Safe with money and deletion | ✗ | `interrupt_on` approvals |
+| Auditable afterwards | a chat log | design notes, custody log, verification report |
+
+> Without the deep agent, Lazarus is a codec library an expert has to drive by hand for hours. With
+> it, a compliance officer uploads files, answers two approval prompts, and gets a verified archive
+> with an evidence trail.
+
+The supervisor runs on **Gemini 2.5 Flash** when `GOOGLE_API_KEY` is set and on **Claude** when
+`ANTHROPIC_API_KEY` is set. **Autopilot** runs the same tools on a fixed recipe with no LLM, clearly
+labeled, for offline demos and as a control.
+
+---
+
+## 🚀 Quickstart
+
+**Requirements:** Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, git. API keys are
+optional: without one, Autopilot runs the full pipeline offline.
 
 ```bash
 git clone https://github.com/GravitB/dna.git && cd dna
-cp .env.example .env            # add GOOGLE_API_KEY or ANTHROPIC_API_KEY for the deep agent
-scripts/run.sh                  # checks bundled Erbgut, installs, builds the UI, serves on :8000
+cp .env.example .env      # optional: GOOGLE_API_KEY (Gemini) or ANTHROPIC_API_KEY (Claude)
+scripts/run.sh            # checks the bundled codec, installs, builds the UI, serves on :8000
 ```
-Open http://localhost:8000 for the homepage, or http://localhost:8000/app/ for the business workspace. The **Archives** page lists your archives and their latest recovery outcomes.
-Choose **Create archive** to upload your own records, or **Try sample archive** for fictional Northstar Bio files.
-Review the inclusion checkboxes, enter retention and budget requirements, then select **Analyze archive**.
-Technical settings and the analysis method are under **Advanced settings**.
 
-Review the proposed cost and resilience evidence before selecting **Approve simulated archive**.
-Then select **Run recovery test** to delete this job's working copies and restore the selected records from
-simulated DNA. Original files elsewhere on your computer are untouched. The resulting report is simulation
-evidence, not regulatory certification. Agent logs, codec charts, and synthesis files are under **Technical details**.
-A rejected or interrupted archive can be revised with its requirements prefilled; upload the records again.
+Open **http://localhost:8000** for the homepage and **http://localhost:8000/app/** for the business
+workspace.
 
-- **Deep agent mode** uses Gemini when `GOOGLE_API_KEY` is set and otherwise uses Anthropic when
-  `ANTHROPIC_API_KEY` is set. Override the model with `LAZARUS_MODEL`, for example
-  `google_genai:gemini-2.5-flash` or `anthropic:<model>`.
-- **Autopilot mode** runs the same tools with a fixed recipe and no LLM. It is clearly labeled in the UI
-  and exists so the pipeline can be tested and demoed offline.
+<details>
+<summary><b>Try it in two minutes</b></summary>
 
-Development (two terminals):
+1. In the workspace, choose **Try a picture demo**. It encodes a bundled 412-byte PNG with 50 simulated
+   years, three vault sites and 16 planned reads per strand.
+2. Select **Analyze archive** and watch the agents plan, measure and attack the design.
+3. Review the evidence and modeled cost, then **Approve simulated archive**.
+4. Select **Run recovery test**. The working copies are deleted and the picture is rebuilt from DNA.
+5. Open the recovery evidence: every file shows its SHA-256 match.
+
+Or choose **Create archive** to upload your own files (up to 200 KB), or **Try sample archive** for the
+fictional Northstar Bio records.
+
+</details>
+
+<details>
+<summary><b>Break it on purpose</b></summary>
+
+On an approved archive, open the DNA experiment and simulate damage, then decode the damaged reads in
+the **DNA Decoder**:
+
+- **Destroy a vault site.** Its strands produce no reads at all.
+- **Switch to Simulator B.** A structurally different sequencer with error bursts and chimera reads.
+- **Double the storage years** or **cut the coverage.** More strands lost, fewer reads per strand.
+- **Withhold a key.** The verdict becomes INCOMPLETE and names the missing key.
+
+Lazarus reports a PASS only when every hash matches. Too much damage gives an honest PARTIAL or FAIL.
+
+</details>
+
+<details>
+<summary><b>Decode on another machine</b></summary>
+
+Export a passphrase-protected key file (**Export keys for independent recovery**, scrypt +
+AES-256-GCM), take the reads FASTA and the non-secret `recovery_bundle.json`, and use **DNA Decoder →
+Independent import** anywhere. The decoder never needs the original workspace.
+
+</details>
+
+<details>
+<summary><b>Development and tests</b></summary>
+
 ```bash
 cd lazarus && uv run uvicorn lazarus.api:app --reload --port 8000
-cd web && npm run dev           # http://localhost:5173/app/, proxies /api to :8000
+cd web && npm run dev                      # http://localhost:5173/app/, proxies /api to :8000
+
+cd lazarus && uv run pytest -q             # 86 tests
+cd web && npx vitest run && npm run build  # 39 tests
 ```
 
-Tests:
-```bash
-cd lazarus && uv run pytest -q
-cd ../web && npm test && npm run build
-```
-The tests cover encryption and tamper detection, decoding the manifest with only the bootstrap spec,
-corrupted strands never producing wrong bytes, recovery from 2 of 3 vaults, and the full deep agent
-graph with human approval, driven by a scripted fake model so no API key is needed.
-`tests/test_dna_experiment.py` covers the DNA experiment:
-- clean FASTA gives a byte-exact PASS
-- moderate damage gives a PASS with both decoders
-- excessive damage is never reported as PASS
-- missing or wrong keys give INCOMPLETE or FAIL
-- independent recovery works after the archive workspace is deleted, with archive storage access
-  forbidden
-- the same seed gives identical reads
-- PDF, PNG and text files are each verified
-- simulations never modify archive artifacts
+The tests cover tamper detection, decoding the manifest from the bootstrap spec alone, corrupted
+strands never producing wrong bytes, recovery from 2 of 3 vaults, independent decoding after the
+workspace is deleted, and the full deep-agent graph with human approval, driven by a scripted model
+so no API key is needed.
 
-## DNA storage experiment: clean FASTA → damage → independent decode → SHA-256
+</details>
 
-After an archive design is approved, every archive page shows a seven-step experiment:
+---
 
-**Upload → Encode → Pre-Simulation FASTA → Simulate → Post-Simulation FASTA → Decode → Verify**
+## 🎯 Lazarus in 10 answers
 
-Everything here is digital. No DNA is synthesized or sequenced, and the UI labels it that way.
-
-1. **Step 1: Original Encoded DNA (Pre-Simulation).** `exports/pre_simulation.fasta` is the approved
-   vault order files (`vaults/vault-N/order.fasta`) concatenated in vault order, with ids
-   `vault-N|{pool}|{index}`. It includes every manifest copy and data strand, and nothing is
-   reordered. `exports/clean_dna.zip` adds every vault FASTA/CSV, `export_metadata.json` (counts, strand
-   length, redundancy, nucleotides, encoder configuration), `recovery_bundle.json` and `SHA256SUMS`.
-   This is the clean synthesis design (a potential manufacturing order), **not** sequencing data.
-2. **Simulate.** Choose the sequencer profile (Nanopore or Illumina), coverage, storage years and seed.
-   Advanced settings cover substitution/insertion/deletion rates, base dropout, simulator A or B, and
-   loss of whole vaults. Each run copies the clean FASTA into its own immutable folder
-   `simulations/<sim-id>/` and sends every (vault, pool) tube through Erbgut's channel simulator.
-3. **Step 2: Damaged DNA (Post-Simulation).** `post_simulation_reads.fasta` contains the simulator's actual
-   reads: shuffled, duplicates kept, lost strands left missing, headers `>read_000001 sample=pool-0000`.
-   `sample` is the tube or primer pair that was sequenced, never the strand id. There are no quality
-   scores, because the simulator does not model them. Strand identities and per-read edit alignments go
-   to a separate `ground_truth.tsv` that the decoder never reads. **Compare Before vs. After**
-   highlights substitutions, insertions and deletions against the source strand.
-4. **DNA Decoder** (main navigation). It takes FASTA or FASTQ (qualities ignored) and has two modes.
-   - **A: Existing archive.** Uses the archive's approved recovery bundle and key store, never its uploads.
-     The input can be an uploaded file, a simulation run, or the clean FASTA as a control.
-   - **B: Independent import.** Needs only the FASTA, an optional `recovery_bundle.json` (non-secret) and
-     a passphrase-protected key file (**Export keys for independent recovery**, scrypt + AES-256-GCM).
-     It works on a machine with no copy of the archive.
-5. **Decode.** The pipeline runs:
-   1. Parse and validate the reads, then group them by sample.
-   2. Decode the bootstrap manifest from the `MANIFEST` reads.
-   3. For each pool, run **reference-free read clustering** (`lazarus/clustering.py`, k-mer index plus
-      edit distance). Erbgut's simulator returns clusters grouped by ground truth, so this stage is
-      needed for honest decoding.
-   4. Build the consensus with the majority-vote baseline **and** Erbgut's CNN PolishDecoder, reported
-      separately.
-   5. Fountain recovery, AES-256-GCM decryption and zstd decompression.
-   6. SHA-256 check against the manifest and the bundle.
-6. **Verify.** The verdict is **PASS** when every hash matches, **PARTIAL** when some match, **FAIL** when
-   none match, and **INCOMPLETE** when metadata or keys are missing (the report names them).
-   Similar-looking DNA never counts as recovery. Only byte-exact files can be downloaded. Each attempt
-   writes `verification_report.json` and `.html`. One trial is reported as one trial, not as a
-   reliability estimate.
-
-New endpoints (all under `/api`):
-
-| Method & path | Purpose |
+| | |
 |---|---|
-| `GET /jobs/{id}/dna` | Clean export metadata, simulations and decodes |
-| `GET /jobs/{id}/dna/sequences?offset&limit&sample` | Inspect clean sequences |
-| `POST /jobs/{id}/simulations` | Start an immutable damage simulation (JSON settings) |
-| `GET /jobs/{id}/simulations[/{sim}]` | Simulation status, settings and metrics |
-| `GET /jobs/{id}/simulations/{sim}/compare` | Clean vs damaged reads with edit operations |
-| `POST /jobs/{id}/recovery-keys` | Passphrase-protected key file (keys never sent in clear) |
-| `GET /jobs/{id}/files/exports/…`, `…/simulations/{sim}/…` (`?download=1`) | Clean FASTA/ZIP/bundle, damaged FASTA, metadata, ground truth |
-| `GET /decoder/capabilities` | Decoder availability and decodable archives |
-| `POST /decoder/sessions` (multipart) | Import FASTA/FASTQ and run decoding (mode A or B) |
-| `GET /decoder/sessions[/{sid}]` | Progress, verdict and per-file hash results |
-| `GET /decoder/sessions/{sid}/files/{report.json, report.html, recovered/<n>}` | Reports and verified files |
+| **User and problem** | Records and compliance teams at pharma companies, banks, law firms and media archives who must keep files readable for 25+ years on media that wears out or goes obsolete within a decade. |
+| **Core claim** | An archived file can be rebuilt byte for byte from DNA reads alone, with no original, no database and no remembered settings, or the decoder states exactly why not. |
+| **Boundary** | Digital simulation: no DNA is made or read. Channel calibrated on real Nanopore reads; decay and costs modeled. Demo archives up to 200 KB; a local key folder stands in for a KMS. |
+| **Correctness** | CRC-16 per strand, CRC-32 per pool, AES-GCM tag and SHA-256 per file. Recovery returns exact bytes or nothing. Design selection uses training seeds; final validation uses held-out seeds that cannot be re-rolled. |
+| **Evidence** | 125 automated tests, plus per-archive recovery reports in JSON and HTML with every step, decoder and hash. |
+| **Interfaces** | React workspace ⇄ FastAPI + live event stream ⇄ deep agent ⇄ tool layer ⇄ DNA codec. FASTA/FASTQ in; vendor-ready FASTA/CSV and verification reports out. |
+| **Measurement** | Exact-strand accuracy on held-out real reads, recovery rate over simulated trials, modeled write and read cost, bits per DNA letter. |
+| **Failure behavior** | Missing key ⇒ INCOMPLETE. Wrong key or flipped bit ⇒ GCM rejects. Failed stress test ⇒ redesign and full retest. Failed final held-out test ⇒ no order can be approved. |
+| **Reproduction** | The Quickstart above. Works offline with Autopilot. |
+| **Next limit** | Real wet-lab reads (primer trimming, reverse complements), archives beyond 200 KB, a real KMS with user authentication, larger trial counts. |
 
-Limitations:
-- Reads must carry their pool label (`sample=` or `vault-N|pool|index`). Lazarus pools share Fountain
-  seed spaces, so in a wet lab they would be separated by primers or barcodes before decoding. Reads are
-  assumed to be forward-strand, because the simulator does not reverse-complement them.
-- Decoder sessions are stored locally (`jobs/_decoder_sessions`). In Supabase mode, mode-A reports are also
-  saved with the archive; independent (mode B) sessions stay local.
-- Real sequencing data can be used once it is basecalled to FASTQ, demultiplexed per pool (sample label in
-  the header) and trimmed of primers or adapters to the 110-nt payload. Reverse-complement
-  normalization and primer trimming would be the next stages to add.
+---
 
-## Cloud storage
+## 📊 By the numbers
 
-For private DNA storage, archive history, and recovery from another computer, see [Supabase setup](docs/SUPABASE.md). Local storage remains available until cloud setup has been verified.
+| Metric | Result |
+|---|---|
+| A single sequencing read exactly right | **1.1%** of strands |
+| Exact strands at 6 reads, classic majority vote | **67.2%** |
+| Exact strands at 6 reads, Lazarus's CNN decoder | **82.3%** (best research variant: 88.1%) |
+| CNN decoder size | **0.8M** parameters, best checkpoint after ~10 minutes of training |
+| Wrong strand slipping past its checksum | **1 in 65,536**, and the pool CRC-32 and file SHA-256 still catch it |
+| Storage density (redundancy 0.3) | **1.2 bits per DNA letter**, 727 strands per 12 KB pool |
+| Simulated vs real Nanopore decoding | within **~3 points** at every read depth |
+| DNA material for 1 TB (215 PB/g benchmark) | **4.65 mg** |
+| Sample archive (Northstar Bio) | **3 of 3** records restored byte-exact from 3 vaults after 50 simulated years |
+| Automated tests | **125** (86 backend, 39 web) |
 
-## Repository layout
+Decoder figures: 1,996 held-out real Nanopore strands never used for training, averaged over 20
+random read draws per point. Archive results are simulation evidence, not a guarantee of future
+physical recovery.
+
+---
+
+## 🗂️ Repository map
+
 ```
-lazarus/lazarus/dna.py        thin wrapper over Erbgut (the only module that imports it)
-lazarus/lazarus/crypto.py     zstd + AES-256-GCM + SHA-256
-lazarus/lazarus/manifest.py   self-describing bootstrap manifest
-lazarus/lazarus/vaults.py     per-site FASTA/CSV orders, vault destruction
-lazarus/lazarus/fasta.py      strict FASTA/FASTQ parsing and writing
-lazarus/lazarus/experiment.py clean pre-simulation export, reproducible damage simulations
-lazarus/lazarus/clustering.py reference-free read clustering (no simulator labels)
-lazarus/lazarus/decoder.py    standalone decoder, verdicts, verification reports, key files
-lazarus/lazarus/tools.py      agent tools, event stream, custody log, certificate
-lazarus/lazarus/agent.py      deepagents supervisor + 4 subagents + human-in-the-loop runner
-lazarus/lazarus/autopilot.py  scripted no-LLM run of the same tools
-lazarus/lazarus/api.py        FastAPI + server-sent events, serves the UI
-web/                          React + Recharts dashboard
-sample_data/northstar_bio/    fictional company files
-docs/                         bootstrap spec, pitch and demo script
-LAZARUS_TEAM_PLAN.md          original plan and team contracts
+lazarus/
+  lazarus/          ★ the product: deep agent, tools, API, decoder
+    agent.py          deepagents supervisor + 5 subagents + human-in-the-loop runner
+    tools.py          agent tools; every number comes from a real codec run
+    autopilot.py      the same tools on a fixed recipe, no LLM
+    crypto.py         zstd + AES-256-GCM + SHA-256, pool splitting
+    manifest.py       self-describing DNA bootstrap manifest
+    vaults.py         per-site FASTA/CSV synthesis orders, vault loss
+    experiment.py     clean DNA export, reproducible damage simulations
+    clustering.py     reference-free read clustering
+    decoder.py        standalone decoder, verdicts, reports, key files
+    candidates.py     frozen designs, train-seed screening, held-out validation
+    learned.py        learned (risk-model) encoding experiments
+    api.py            FastAPI + live events; serves the homepage and workspace
+  dna_codec/        bundled DNA codec: Fountain encoder, channel simulators, decoders
+  checkpoints/      pre-trained CNN decoder
+  profiles/         calibrated Nanopore and Illumina channel profiles
+  tests/            86 backend tests
+web/                React business workspace (/app): archives, wizard, decoder, 3D helix
+site/               scrolling homepage (/)
+supabase/           optional cloud storage migrations
+sample_data/        fictional Northstar Bio records
+scripts/            run, codec check, verification helpers
+docs/               deep dives, bootstrap spec, demo script, screenshots
 ```
 
-## Honesty notes
-- DNA synthesis and sequencing are **simulated** with Erbgut's channel model. It is calibrated on real
-  Nanopore reads; storage decay is extrapolated. We never claim physical DNA was made.
-- Costs use Erbgut's placeholder prices and are always labeled "modeled".
-- Recovery rates come from small trial counts (4–8 per point) on train seeds only (Erbgut's seed
-  discipline). We do not pick lucky seeds.
-- This is a local demo, not a compliance certification or production archive. Keys are stored in a
-  local folder that only simulates a customer KMS. The server has no user authentication; do not
-  upload sensitive files or expose it to a network.
-- Vault placement spreads strands across sites; recovery from any chosen K of N sites is not guaranteed.
-  The certificate describes a simulated drill, not a guarantee of future recovery.
-- The bootstrap procedure still depends on the codec's implementation and its dependencies; the
-  short spec alone has not been independently validated as sufficient to reimplement it.
+---
 
-## Credits
-The DNA codec, both sequencing simulators, the baseline decoder and the CNN decoder are from
-**Erbgut** by the HackMIT 2026 team (https://github.com/timarnoldev/hackmit2026,
-https://plume.hackmit.org/project/mwrat-butaa-qmvaa-aebuw). Lazarus includes their source directly as `lazarus/dna_codec`, with runtime assets in `lazarus/profiles` and `lazarus/checkpoints`.
-Erbgut's repository has no license file, so we are asking its authors for permission.
+## 🧰 Built with
 
-What Lazarus adds: the enterprise workflow, the deepagents supervisor and subagents, archive-level red
-teaming with redesign, encryption and multi-site vault placement, the DNA-encoded bootstrap manifest,
-the disaster drill with SHA-256 verification, the certificate and chain of custody, and the web app.
+| Layer | Tools |
+|---|---|
+| Agents | LangChain deepagents, LangGraph (checkpointer, interrupts), Gemini 2.5 Flash, Claude |
+| DNA | Fountain (LT) code with robust soliton degrees, calibrated sequencing simulators, majority-vote and CNN consensus |
+| ML | PyTorch (CUDA, Apple MPS or CPU), rapidfuzz |
+| Security | AES-256-GCM, scrypt key files, SHA-256, zstd |
+| Backend | Python 3.11+, FastAPI, Uvicorn, server-sent events, uv |
+| Storage | Local job store, or Supabase for cloud archives |
+| Frontend | React 18, Vite 6, TypeScript, three.js, Recharts |
+| Testing | pytest, Vitest, Playwright |
 
-Bundled codec source: `lazarus/dna_codec`, from upstream revision `556924ab285980c5523a93871474ec773d32b7d9`. This contains the unchanged Python source, profiles and model checkpoint; hardware, datasets and the upstream dashboard are excluded. The codec is included in the Lazarus Python package, without a separate dnacodec dependency or download.
+Built during HackPrinceton: everything under `lazarus/lazarus/`, `lazarus/tests/`, `web/`, `supabase/`,
+`scripts/`, `sample_data/` and `docs/`. The DNA codec, channel simulators and pre-trained CNN decoder in
+`lazarus/dna_codec/`, `lazarus/profiles/` and `lazarus/checkpoints/` are bundled with permission and
+used unchanged, and the homepage in `site/` is adapted from the same project's site with permission.
 
-The bundled upstream `dnacodec` package is named `dna_codec` locally for integration. This naming change does not change its original authorship.
+---
+
+## ⚖️ Honest by design
+
+- DNA synthesis and sequencing are **simulated**. The channel is calibrated on real Nanopore reads;
+  storage decay is extrapolated and always labeled "modeled".
+- Costs use placeholder prices and are always labeled "modeled".
+- Recovery rates come from small trial counts. One PASS is one trial, not a reliability guarantee.
+- This is a local demo, not a compliance certification. Keys live in a local folder that simulates a
+  KMS, and the server has no user authentication: don't upload sensitive files or expose it to a
+  network.
+
+---
+
+## 📚 Docs
+
+[How it works](docs/HOW_IT_WORKS.md) ·
+[Encoder & decoder deep dive](docs/ENCODER_DECODER_DEEP_DIVE.md) ·
+[DNA from zero](docs/BIOLOGY.md) ·
+[Bootstrap spec](docs/BOOTSTRAP.md) ·
+[Deep agents demo](docs/DEEPAGENTS_DEMO.md) ·
+[Learned archives](docs/LEARNED_ARCHIVES.md) ·
+[3D DNA viewer](docs/VISUAL_DNA.md) ·
+[Cloud storage](docs/SUPABASE.md) ·
+[Pitch](docs/PITCH.md)

@@ -198,7 +198,7 @@ Code: `lazarus/lazarus/tools.py`, `prepare_archive()`.
 
 ### Step 5: Fountain-code each pool into strands
 
-This is the heart of the encoder: `dnacodec/encoder.py`, `encode()`. It turns one pool's bytes into
+This is the heart of the encoder: `lazarus/dna_codec/encoder.py`, `encode()`. It turns one pool's bytes into
 a list of 110-letter strands.
 
 #### 5a. The layout of one strand
@@ -456,7 +456,7 @@ transitions (A↔G, C↔T) more likely than other swaps, damaged stretches inste
 spots. Nothing is ever tuned against it. It exists to check that a design that passes on the normal
 simulator isn't just exploiting that simulator's quirks.
 
-Code: `dnacodec/simulator.py`, `dnacodec/simulator_b.py`, profiles in `profiles/*.json`, Lazarus
+Code: `lazarus/dna_codec/simulator.py`, `lazarus/dna_codec/simulator_b.py`, profiles in `lazarus/profiles/*.json`, Lazarus
 wrapper in `lazarus/lazarus/dna.py` and `experiment.py`.
 
 ---
@@ -516,7 +516,7 @@ rejects it, and the Fountain code tolerates the missing strand.
 ### 4c. Consensus, part 1: the classic majority vote
 
 For each cluster, this rebuilds one 110-letter strand from its noisy reads
-(`dnacodec/baseline.py`, `reconstruct()`):
+(`lazarus/dna_codec/baseline.py`, `reconstruct()`):
 
 1. **Cap the reads at 16.** Bigger clusters are thinned to 16 evenly spaced reads (deterministic,
    no randomness).
@@ -567,7 +567,7 @@ there are only 6 reads. That knowledge is exactly what a small network can learn
 #### What the network sees: 17 numbers per position
 
 For each of the 110 draft positions, the network gets 17 features (`features_of()` in
-`dnacodec/model/polish.py`):
+`lazarus/dna_codec/model/polish.py`):
 
 | # | Feature | Meaning |
 |---|---|---|
@@ -656,7 +656,7 @@ Silicon (MPS) or CPU, and shares it between threads with a lock.
 
 ### 4e. Fountain recovery: from strands back to bytes
 
-Now the decoder has one candidate strand per cluster. `dnacodec/encoder.py`, `recover()`:
+Now the decoder has one candidate strand per cluster. `lazarus/dna_codec/encoder.py`, `recover()`:
 
 1. **Parse and check each strand.** Letters back to bits. The first 16 letters give the seed. The
    seed regenerates the whitening mask, which is XORed off the payload. Then the CRC-16 is checked.
@@ -725,7 +725,7 @@ timing. A single PASS is described as one trial, not a reliability guarantee.
 
 ## 5. How the decoder was trained
 
-The polisher ships as a **pre-trained checkpoint** (`checkpoints/polish/polish.pt`). Lazarus does
+The polisher ships as a **pre-trained checkpoint** (`lazarus/checkpoints/polish/polish.pt`). Lazarus does
 not retrain it; it loads it and uses it. This section explains how that checkpoint was produced,
 using the exact settings stored inside it.
 
@@ -879,7 +879,7 @@ redundancy for the same safety, which means less DNA and less money.
 
 ### 5.8 What didn't work: a big transformer
 
-Before the polisher, a 9.6M-parameter transformer (`ConsensusNet`, `dnacodec/model/net.py`) tried to
+Before the polisher, a 9.6M-parameter transformer (`ConsensusNet`, `lazarus/dna_codec/model/net.py`) tried to
 learn the whole job end to end, alignment included, straight from raw reads. After 11,300 training
 steps it reached 1.4% / 5.6% / 10.8% exact strands at 2 / 6 / 16 reads, against 4.8% / 68.1% /
 90.6% for plain majority vote, and it was improving too slowly. It was dropped. The polisher is 12
@@ -896,7 +896,7 @@ The polisher helps at **read** time. The risk model helps at **write** time: it 
 candidate strand, how likely the decoder is to get it wrong on a given channel. The encoder uses it
 to pick the safest of several equally valid candidates (5h).
 
-**How it is trained** (`dnacodec/risk.py`; Lazarus's "fresh learning" in
+**How it is trained** (`lazarus/dna_codec/risk.py`; Lazarus's "fresh learning" in
 `lazarus/lazarus/learned_worker.py`):
 
 1. **Generate controlled training strands.** Random strands plus strands with deliberately risky
@@ -997,28 +997,28 @@ by asking a language model.
 
 ## 9. Where each piece lives in the code
 
-The codec package `dnacodec` lives in the vendored codec folder under `vendor/` (gitignored, not
-redistributed). Lazarus's own code is in `lazarus/lazarus/`.
+The DNA codec is bundled in `lazarus/dna_codec/`, with its channel profiles in `lazarus/profiles/` and
+the pre-trained decoder in `lazarus/checkpoints/`. Lazarus's own code is in `lazarus/lazarus/`.
 
 | Piece | File |
 |---|---|
 | Compress, encrypt, hash, pool size | `lazarus/lazarus/crypto.py` |
 | Stream and pool splitting, synthesis order | `lazarus/lazarus/tools.py` (`prepare_archive`, `place_synthesis_order`) |
-| Fountain encoder and recovery | `dnacodec/encoder.py` (`encode`, `recover`, `_Layout`, `_solve`) |
-| Encoder settings and file metadata | `dnacodec/types.py` |
+| Fountain encoder and recovery | `lazarus/dna_codec/encoder.py` (`encode`, `recover`, `_Layout`, `_solve`) |
+| Encoder settings and file metadata | `lazarus/dna_codec/types.py` |
 | Lazarus wrapper around the codec | `lazarus/lazarus/dna.py` |
 | DNA manifest (bootstrap) | `lazarus/lazarus/manifest.py`, spec in `docs/BOOTSTRAP.md` |
 | Vault placement and order files | `lazarus/lazarus/vaults.py` |
 | Clean export, read simulation runs | `lazarus/lazarus/experiment.py` |
-| Channel simulator A and red-team B | `dnacodec/simulator.py`, `dnacodec/simulator_b.py` |
-| Channel profiles (calibrated) | `profiles/nanopore_budget.json`, `profiles/illumina_standard.json` |
+| Channel simulator A and red-team B | `lazarus/dna_codec/simulator.py`, `lazarus/dna_codec/simulator_b.py` |
+| Channel profiles (calibrated) | `lazarus/profiles/nanopore_budget.json`, `lazarus/profiles/illumina_standard.json` |
 | FASTA/FASTQ parsing | `lazarus/lazarus/fasta.py` |
 | Read clustering | `lazarus/lazarus/clustering.py` |
-| Majority vote decoder | `dnacodec/baseline.py` |
-| Learned polisher (network, features, edits) | `dnacodec/model/polish.py` |
-| Polisher training | `scripts/train_polish.py` |
-| Real dataset loader and held-out split | `dnacodec/realdata.py` |
-| Seed discipline | `dnacodec/seeds.py` |
+| Majority vote decoder | `lazarus/dna_codec/baseline.py` |
+| Learned polisher (network, features, edits) | `lazarus/dna_codec/model/polish.py` |
+| Polisher training | not bundled: only the trained checkpoint `lazarus/checkpoints/polish/polish.pt` ships |
+| Real dataset loader and held-out split | `lazarus/dna_codec/realdata.py` |
+| Seed discipline | `lazarus/dna_codec/seeds.py` |
 | Standalone decoder and verification report | `lazarus/lazarus/decoder.py` |
-| Risk model | `dnacodec/risk.py`; Lazarus training worker `lazarus/lazarus/learned_worker.py` |
+| Risk model | `lazarus/dna_codec/risk.py`; Lazarus training worker `lazarus/lazarus/learned_worker.py` |
 | Candidate designs and approval checks | `lazarus/lazarus/candidates.py`, `lazarus/lazarus/learned.py` |
