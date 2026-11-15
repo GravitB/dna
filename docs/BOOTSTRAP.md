@@ -28,5 +28,10 @@ bytes 8..   zstd-compressed JSON (N bytes), then zero padding
 The JSON names, for each data pool, its exact encoder settings, `n_bytes`, `n_chunks` and offset in the
 archive stream. For each file it gives its key id, nonce, offset, length and SHA-256. It also records how
 strands were spread over the vaults and which decoder was recommended. Decode every pool, concatenate
-the pools in id order, cut out each file, decrypt it with AES-256-GCM (aad `lazarus-v1`) using the key
-from the customer's key store, decompress it with zstd, and check the SHA-256.
+the pools in id order, cut out each file, decrypt it with AES-256-GCM (aad `lazarus-v1`) using the
+file's data key, decompress it with zstd, and check the SHA-256.
+
+The manifest's `keys` field says where data keys come from. For organization archives they are in the
+archive's Recovery Package (`encryption/wrapped_keys.json`), wrapped under the organization master key.
+Older archives use a passphrase-protected per-archive key file. The Recovery Package format is
+specified in `RECOVERY_PACKAGE.md`.

@@ -26,6 +26,7 @@ cloud-setup = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
 lazarus-cloud = "lazarus.cloud_cli:main"
+lazarus-decode = "lazarus.offline_decode:main"
 
 [build-system]
 requires = ["hatchling"]

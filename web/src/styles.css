@@ -1103,3 +1103,33 @@ nav a { white-space: nowrap; }
 @media (max-width: 720px) {
   .tabs { position: relative; top: auto; z-index: 1; }
 }
+
+/* ------------------------------------------------------------------ long-term recovery & org keys */
+.long-term .actions { flex-wrap: wrap; }
+.requirements {
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 8px);
+}
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  min-height: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.form-panel .summary { margin-top: 8px; }
+.form-panel dl.summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.form-panel dl.summary dd { margin: 2px 0 0; font-weight: 600; }
+@media (max-width: 720px) { .form-panel dl.summary { grid-template-columns: 1fr 1fr; } }

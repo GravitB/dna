@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -31,6 +31,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from . import agent, store, tools, vaults, presentation, artifacts, experiment, decoder, fasta, crypto  # noqa: E402
+from . import orgkeys, orgs, package_format, recovery_package  # noqa: E402
 from .persistence import get_cloud, StorageError  # noqa: E402
 
 MAX_UPLOAD_BYTES = 200_000
@@ -98,6 +99,11 @@ app.add_middleware(
 @app.exception_handler(StorageError)
 async def storage_error(request, exc):
     return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(orgs.OrgError)
+async def org_error(request, exc):
+    return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
 
 
 @app.exception_handler(FileNotFoundError)
@@ -180,7 +186,9 @@ async def create_job(
     analysis_preset: str = Form("standard"),
     mode: str = Form("agent"),
     encoding_mode: str | None = Form(None),
+    org_id: str = Form(""),
     files: list[UploadFile] | None = File(None),
+    x_lazarus_org_token: str | None = Header(None),
 ):
     from .experience import QUICK_SAMPLE
     if analysis_preset not in ("standard", "quick_demo"):
@@ -262,10 +270,17 @@ async def create_job(
         from . import model_registry
         if model_registry.find(pol) is None:
             raise HTTPException(409, 'No compatible evaluated model. Choose fresh learning or standard encoding.')
+    if org_id:
+        org = orgs.authorize(org_id, x_lazarus_org_token)
+        if not orgs.public(org)["backup_current"]:
+            raise HTTPException(409, "Export a backup of the organization master key (current version) before "
+                                     "creating archives protected by it.")
+        company = org["name"]
     job_id = store.new_job(company, pol)
     store.update(
         job_id,
         lambda j: j.update(
+            **({"org_id": org_id} if org_id else {}),
             name=name.strip() or company,
             analysis_preset=analysis_preset,
             encoding_mode=encoding_mode,
@@ -326,7 +341,17 @@ def get_job(job_id: str):
         "backend": "supabase" if get_cloud() else "local",
         "state": "pending" if get_cloud() else "local",
     }
+    j["key_management"] = key_summary(j)
     return j
+
+
+def key_summary(job: dict) -> dict:
+    """Public view of key custody. Wrapped keys stay behind the organization token."""
+    km = job.get("key_management") or {}
+    if km.get("mode") != "organization":
+        return {"mode": "legacy"}
+    return {k: km.get(k) for k in ("mode", "org_id", "kek_version", "kek_fingerprint", "wrapped",
+                                    "migrated_from", "migration_verified")}
 
 
 @app.get("/api/jobs/{job_id}/preview/{name}")
@@ -584,9 +609,10 @@ def compare_simulation(job_id: str, sim_id: str, limit: int = 8):
 
 
 @app.post("/api/jobs/{job_id}/recovery-keys")
-def export_keys(job_id: str, body: dict):
+def export_keys(job_id: str, body: dict, x_lazarus_org_token: str | None = Header(None)):
     """Passphrase-protected key file for independent decoding. Keys are never returned in clear."""
     job = _ordered(job_id)
+    _org_gate(job, x_lazarus_org_token)
     passphrase = body.get("passphrase") if isinstance(body, dict) else None
     if not isinstance(passphrase, str):
         raise HTTPException(400, "A passphrase is required.")
@@ -597,6 +623,148 @@ def export_keys(job_id: str, body: dict):
         raise HTTPException(400, str(exc))
     store.emit(job_id, "message", "human", {"text": "Passphrase-protected recovery key file exported."})
     return _file_response(data, f"{job_id}_keys.lazarus-keys.json", download=True)
+
+
+# ---------------------------------------------------------------- organizations and master keys
+
+
+def _org_gate(job: dict, token: str | None) -> None:
+    """Archives protected by an organization: key material (even wrapped) needs its token."""
+    org_id = job.get("org_id") or (job.get("key_management") or {}).get("org_id")
+    if org_id:
+        orgs.authorize(org_id, token)
+
+
+@app.post("/api/orgs")
+def create_org(body: dict):
+    org, token = orgs.create((body or {}).get("name", ""))
+    return {"org": orgs.public(org), "access_token": token,
+            "notice": "Save this access token now; it is shown once and authorizes key operations. Then "
+                      "export a passphrase-protected backup of your master key."}
+
+
+@app.get("/api/orgs/{org_id}")
+def get_org(org_id: str, x_lazarus_org_token: str | None = Header(None)):
+    return orgs.public(orgs.authorize(org_id, x_lazarus_org_token))
+
+
+@app.post("/api/orgs/{org_id}/master-key/backup")
+def backup_master_key(org_id: str, body: dict, x_lazarus_org_token: str | None = Header(None)):
+    """The only way the master key leaves the server: encrypted under the caller's passphrase."""
+    orgs.authorize(org_id, x_lazarus_org_token)
+    body = body or {}
+    if body.get("acknowledge") is not True:
+        raise HTTPException(400, "Confirm that losing every copy of this backup can make archives unrecoverable.")
+    if body.get("passphrase") != body.get("confirm_passphrase"):
+        raise HTTPException(400, "The passphrases do not match.")
+    scope = body.get("scope", "all")
+    if scope not in ("all", "current"):
+        raise HTTPException(400, "scope must be all or current")
+    data, versions = orgs.export_backup(org_id, body.get("passphrase") or "", scope)
+    return _file_response(data, f"{org_id}-master-key-v{'-'.join(map(str, versions))}.json", download=True)
+
+
+@app.post("/api/orgs/restore")
+async def restore_master_key(backup_file: UploadFile = File(...), passphrase: str = Form("")):
+    data = await _read_upload(backup_file, MAX_KEYFILE_BYTES, "The master key backup")
+    if data is None:
+        raise HTTPException(400, "Choose the master key backup file.")
+    return await asyncio.to_thread(orgs.restore, data, passphrase)
+
+
+@app.post("/api/orgs/{org_id}/master-key/rotate")
+def rotate_master_key(org_id: str, body: dict, x_lazarus_org_token: str | None = Header(None)):
+    orgs.authorize(org_id, x_lazarus_org_token)
+    if (body or {}).get("confirm") is not True:
+        raise HTTPException(400, "Confirm the rotation.")
+    return orgs.rotate(org_id)
+
+
+@app.get("/api/orgs/{org_id}/legacy-archives")
+def legacy_archives(org_id: str, x_lazarus_org_token: str | None = Header(None)):
+    orgs.authorize(org_id, x_lazarus_org_token)
+    out = []
+    for j in store.list_jobs():
+        job = store.load(j["id"])
+        if job.get("order") and (job.get("key_management") or {}).get("mode") != "organization" and not job.get("org_id"):
+            out.append({"id": job["id"], "name": job.get("name") or job["company"], "created": job["created"]})
+    return out
+
+
+@app.post("/api/orgs/{org_id}/migrate")
+def migrate_archive(org_id: str, body: dict, x_lazarus_org_token: str | None = Header(None)):
+    orgs.authorize(org_id, x_lazarus_org_token)
+    archive_id = (body or {}).get("archive_id") or ""
+    _ordered(archive_id)
+    with job_operation(archive_id):
+        return orgs.migrate_legacy(org_id, archive_id, delete_legacy_keys=bool(body.get("delete_legacy_keys")))
+
+
+# ---------------------------------------------------------------- long-term recovery package
+
+
+@app.post("/api/jobs/{job_id}/recovery-package")
+def create_recovery_package(job_id: str, x_lazarus_org_token: str | None = Header(None)):
+    job = _ordered(job_id)
+    _org_gate(job, x_lazarus_org_token)
+    try:
+        return recovery_package.build(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.get("/api/jobs/{job_id}/recovery-package")
+def download_recovery_package(job_id: str, x_lazarus_org_token: str | None = Header(None)):
+    job = _ordered(job_id)
+    _org_gate(job, x_lazarus_org_token)
+    data, rp = recovery_package.latest(job_id)
+    return _file_response(data, f"{job_id}-r{rp['revision']}-{package_format.FILENAME}", download=True)
+
+
+@app.get("/api/jobs/{job_id}/synthesis-requirements")
+def synthesis_requirements(job_id: str):
+    _ordered(job_id)
+    if not store.load(job_id).get("recovery_package"):
+        raise HTTPException(409, "Create the Recovery Package first.")
+    return Response(artifacts.download(job_id, "exports/synthesis_requirements.md"),
+                    media_type="text/markdown; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/jobs/{job_id}/recovery-package/test", status_code=202)
+def test_recovery_package(job_id: str, body: dict, x_lazarus_org_token: str | None = Header(None)):
+    """Independent recovery check: metadata and wrapped keys come only from the latest Recovery
+    Package (as a future reader would have them); reads are the clean design or a simulation run."""
+    job = _ordered(job_id)
+    _org_gate(job, x_lazarus_org_token)
+    data, rp = recovery_package.latest(job_id)
+    pkg = package_format.read(data)
+    source = (body or {}).get("source", "simulation")
+    if source == "simulation":
+        sims = [s for s in job.get("simulations", []) if s["status"] == "complete"]
+        sim = next((s for s in sims if s["id"] == body.get("simulation_id")), sims[-1] if sims else None)
+        if not sim:
+            raise HTTPException(409, "Run a damage simulation first, or test with the clean design.")
+        reads = artifacts.download(job_id, sim["files"]["post_simulation_reads.fasta"]["path"])
+        name, evidence, sim_ref = "post_simulation_reads.fasta", "simulated_reads", {"simulation_id": sim["id"]}
+    elif source == "clean":
+        reads = pkg.files["synthesis/pre_simulation.fasta"]
+        name, evidence, sim_ref = "pre_simulation.fasta", "clean_design", None
+    else:
+        raise HTTPException(400, "source must be simulation or clean")
+    if pkg.encryption.get("mode") == "organization":
+        km = pkg.encryption
+        ring = orgs.keyring(km["org_id"], [int(km["kek_version"])])
+        keys = orgkeys.unwrap_keys(pkg.wrapped_keys, ring, org_id=km["org_id"], archive_id=job_id)
+        key_source = f"package wrapped keys, master key v{km['kek_version']}"
+    else:
+        keys = {f["key_id"]: artifacts.get_key(job_id, f["key_id"]) for f in job["sealed"].values()}
+        key_source = "legacy archive keys"
+    req = decoder.DecodeRequest(
+        fasta_bytes=reads, fasta_name=name, decoders=["baseline"], key_for=keys.get, key_source=key_source,
+        mode="package_test", bundle=pkg.bundle(), expected_archive_id=job_id, simulation=sim_ref,
+        sample_map=pkg.sample_map(), evidence=evidence,
+        archive_context={"recovery_package": {"revision": rp["revision"], "sha256": rp["sha256"]}})
+    return decoder.start(req, job_id=job_id, on_done=_record_decode)
 
 
 # ---------------------------------------------------------------- standalone DNA decoder
@@ -634,7 +802,7 @@ def decoder_capabilities():
         "decoders": {"baseline": {"available": True, "label": "Majority vote (baseline)"},
                      "polish": {"available": ok, "reason": why, "label": "the bundled codec CNN PolishDecoder"}},
         "max_fasta_bytes": fasta.MAX_FASTA_BYTES,
-        "formats": ["FASTA", "FASTQ (quality scores ignored)"],
+        "formats": ["FASTA", "FASTQ (mean-quality read filter; consensus ignores per-base qualities)", "gzip"],
         "archives": [
             {"id": j["id"], "name": (s := store.load(j["id"])).get("name") or s["company"],
              "simulations": [{"id": x["id"], "created": x["created"], "seed": x["settings"]["seed"]}
@@ -657,6 +825,12 @@ async def create_decode(
     bundle_file: UploadFile | None = File(None),
     key_file: UploadFile | None = File(None),
     simulation_metadata: UploadFile | None = File(None),
+    package_file: UploadFile | None = File(None),
+    master_key_file: UploadFile | None = File(None),
+    reads_files: list[UploadFile] | None = File(None),
+    lab_sheet: UploadFile | None = File(None),
+    lab: bool = Form(False),
+    min_quality: float | None = Form(None),
 ):
     if mode not in ("existing_archive", "independent_import"):
         raise HTTPException(400, "mode must be existing_archive or independent_import")
@@ -667,11 +841,36 @@ async def create_decode(
     fasta_name = Path(fasta_file.filename).name if fasta_bytes is not None else ""
     keyfile = await _read_upload(key_file, MAX_KEYFILE_BYTES, "The key file")
     key_mode = key_mode or ("archive" if mode == "existing_archive" else "keyfile")
-    if key_mode not in ("archive", "keyfile", "none") or (key_mode == "archive" and mode != "existing_archive"):
+    if master_key_file is not None and master_key_file.filename:
+        key_mode = "master"
+    if key_mode not in ("archive", "keyfile", "none", "master") or (key_mode == "archive" and mode != "existing_archive"):
         raise HTTPException(400, "key_mode must be archive (existing archives only), keyfile or none")
 
     keys: dict[str, bytes] = {}
     keyfile_archive = None
+    pkg, raw_pkg = None, None
+    inputs: list[decoder.ReadInput] = []
+    if package_file is not None and package_file.filename:
+        if mode != "independent_import":
+            raise HTTPException(400, "Recovery Packages are imported in independent recovery mode.")
+        raw_pkg = await _read_upload(package_file, package_format.MAX_PACKAGE_BYTES, "The Recovery Package")
+        try:
+            pkg = await asyncio.to_thread(package_format.read, raw_pkg)
+        except package_format.PackageError as exc:
+            raise HTTPException(400, str(exc))
+    master = await _read_upload(master_key_file, MAX_KEYFILE_BYTES, "The master key backup")
+    if master is not None:
+        if pkg is None or pkg.encryption.get("mode") != "organization":
+            raise HTTPException(400, "A master key backup needs a Recovery Package of an organization archive.")
+        enc = pkg.encryption
+        try:
+            info, ring = await asyncio.to_thread(orgkeys.open_backup, master, passphrase)
+            if info["org_id"] != enc["org_id"]:
+                raise orgkeys.KeyError_(f"The master key backup is for organization {info['org_id']}, "
+                                        f"but this archive belongs to {enc['org_id']}.")
+            keys = orgkeys.unwrap_keys(pkg.wrapped_keys, ring, org_id=enc["org_id"], archive_id=pkg.archive_id)
+        except orgkeys.KeyError_ as exc:
+            raise HTTPException(400, str(exc))
     if key_mode == "keyfile" and keyfile is not None:
         try:
             keyfile_archive, keys = await asyncio.to_thread(decoder.open_keyfile, keyfile, passphrase)
@@ -721,9 +920,26 @@ async def create_decode(
         else:
             key_for, key_source = keys.get, ("uploaded key file" if keys else "no keys supplied")
     else:
-        if fasta_bytes is None:
+        sheet = {}
+        if lab_sheet is not None and lab_sheet.filename:
+            sheet = _lab_sheet(await _read_upload(lab_sheet, MAX_BUNDLE_BYTES, "The lab sample sheet"))
+        uploads = ([(fasta_name, fasta_bytes)] if fasta_bytes is not None else [])
+        for f in reads_files or []:
+            if f.filename:
+                uploads.append((Path(f.filename).name, await _read_upload(f, fasta.MAX_FASTA_BYTES, "A reads file")))
+        if not uploads:
             raise HTTPException(400, "Upload the FASTA/FASTQ file to decode.")
-        bundle = _json_upload(await _read_upload(bundle_file, MAX_BUNDLE_BYTES, "The recovery bundle"), "The recovery bundle")
+        if sum(len(d) for _, d in uploads) > fasta.MAX_FASTA_BYTES * 2:
+            raise HTTPException(413, "The read files are too large together.")
+        unknown = set(sheet) - {n for n, _ in uploads}
+        if unknown:
+            raise HTTPException(400, f"The lab sample sheet names files that were not uploaded: {', '.join(sorted(unknown))}")
+        inputs = [decoder.ReadInput(n, d, sheet.get(n)) for n, d in uploads]
+        fasta_name, fasta_bytes = uploads[0]
+        if pkg is not None:
+            bundle = pkg.bundle()
+        else:
+            bundle = _json_upload(await _read_upload(bundle_file, MAX_BUNDLE_BYTES, "The recovery bundle"), "The recovery bundle")
         if bundle is not None and bundle.get("format") != "lazarus-recovery-bundle-v1":
             raise HTTPException(400, "The recovery bundle is not a Lazarus recovery bundle.")
         if bundle and keyfile_archive and bundle.get("archive_id") != keyfile_archive:
@@ -738,18 +954,45 @@ async def create_decode(
                           "profile": sim_meta.get("profile")}
         archive_id = (bundle or {}).get("archive_id") or keyfile_archive or ""
         key_for = keys.get
-        key_source = "uploaded key file" if keys else "no keys supplied"
+        key_source = ("organization master key backup" if key_mode == "master" else
+                      "uploaded key file" if keys else "no keys supplied")
+        if pkg is not None:
+            context = {"recovery_package": {"revision": pkg.info.get("revision"),
+                                            "sha256": package_format.sha256(raw_pkg)}}
+    lab = lab or len(inputs) > 1 or any(i.sample for i in inputs)
     try:
-        await asyncio.to_thread(fasta.parse, fasta_bytes)
+        for i in inputs or [decoder.ReadInput(fasta_name, fasta_bytes)]:
+            await asyncio.to_thread(fasta.parse, i.data, lenient=lab)
     except fasta.FastaError as exc:
         raise HTTPException(400, f"Invalid sequence file: {exc}")
+    if min_quality is not None and not 0 <= min_quality <= 60:
+        raise HTTPException(400, "min_quality must be 0–60")
 
     req = decoder.DecodeRequest(
         fasta_bytes=fasta_bytes, fasta_name=fasta_name or "reads.fasta", decoders=chosen, key_for=key_for,
         key_source=key_source, mode=mode, bundle=bundle, expected_archive_id=archive_id or None,
-        simulation=simulation, archive_context=context,
+        simulation=simulation, archive_context=context, inputs=inputs or None,
+        sample_map=pkg.sample_map() if pkg else {}, lab=lab, min_mean_quality=min_quality,
     )
     return decoder.start(req, job_id=job_id, on_done=_record_decode if job_id else None)
+
+
+def _lab_sheet(data: bytes | None) -> dict[str, str]:
+    """Lab sample sheet: CSV with columns file,sample_id. Returns {file name: sample id}."""
+    import csv
+    import io
+
+    try:
+        rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
+    except (UnicodeDecodeError, csv.Error):
+        raise HTTPException(400, "The lab sample sheet must be a UTF-8 CSV with columns file,sample_id.") from None
+    out = {}
+    for n, row in enumerate(rows, start=2):
+        file, sid = Path((row.get("file") or "").strip()).name, (row.get("sample_id") or "").strip()
+        if not file or not fasta.valid_label(sid):
+            raise HTTPException(400, f"Lab sample sheet line {n}: need a file name and a valid sample_id.")
+        out[file] = sid
+    return out
 
 
 def _record_decode(session: dict, result: dict) -> None:

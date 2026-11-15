@@ -477,8 +477,10 @@ Code: `lazarus/lazarus/decoder.py`, `run()`.
 
 ### 4a. Parse and group by tube
 
-The read file is parsed strictly (only A, C, G, T allowed; size and count limits). If it is FASTQ,
-the quality scores are ignored. Each read is put in a bucket by its `sample=` label: `MANIFEST`,
+The read file is parsed strictly (size and count limits; gzip is allowed). Reads containing N or
+other ambiguity codes, and overlong reads, are dropped and counted. If it is FASTQ, reads whose mean
+quality score is below Phred 7 are dropped; beyond that filter, the consensus never uses per-base
+qualities, only the letters. Each read is put in a bucket by its `sample=` label: `MANIFEST`,
 `pool-0000`, `pool-0001`, … Reads with no label can't be placed and are reported as a warning.
 
 ### 4b. Clustering: which reads came from the same strand?
@@ -658,7 +660,9 @@ Silicon (MPS) or CPU, and shares it between threads with a lock.
 
 Now the decoder has one candidate strand per cluster. `lazarus/dna_codec/encoder.py`, `recover()`:
 
-1. **Parse and check each strand.** Letters back to bits. The first 16 letters give the seed. The
+1. **Parse and check each strand.** (A real sequencer can read either strand of the DNA duplex, so a
+   consensus built from reverse-strand reads fails its CRC as-is. The decoder then tries its reverse
+   complement, and keeps it if that passes.) Letters back to bits. The first 16 letters give the seed. The
    seed regenerates the whitening mask, which is XORed off the payload. Then the CRC-16 is checked.
    Any strand with a wrong CRC, the wrong length, a non-ACGT letter or an impossible seed is dropped.
    Duplicate seeds (two clusters for the same strand) keep the first valid copy.

@@ -27,8 +27,8 @@
 <img src="https://img.shields.io/badge/Supabase-cloud%20archives-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
 <img src="https://img.shields.io/badge/AES--256--GCM-key%20never%20in%20DNA-0b6e82" alt="AES-256-GCM" />
 <br />
-<img src="https://img.shields.io/badge/pytest-86%20passing-0A9EDC?logo=pytest&logoColor=white" alt="86 pytest tests passing" />
-<img src="https://img.shields.io/badge/Vitest-39%20passing-6E9F18?logo=vitest&logoColor=white" alt="39 Vitest tests passing" />
+<img src="https://img.shields.io/badge/pytest-99%20passing-0A9EDC?logo=pytest&logoColor=white" alt="99 pytest tests passing" />
+<img src="https://img.shields.io/badge/Vitest-41%20passing-6E9F18?logo=vitest&logoColor=white" alt="41 Vitest tests passing" />
 <img src="https://img.shields.io/badge/HackPrinceton-Business%20%26%20Enterprise%20Track-0a7a41" alt="Business and Enterprise track" />
 
 <br /><br />
@@ -118,7 +118,9 @@ exactly what Lazarus does.
 | 🔐 **Key never in DNA** | zstd + AES-256-GCM. Stolen DNA is unreadable ciphertext; a single flipped bit fails the GCM tag. |
 | 📜 **Self-describing archive** | The manifest is written into DNA with one fixed, published setting. In 50 years a one-page spec is enough to start reading. |
 | 🏛️ **Multi-vault placement** | Strand *i* goes to vault *i* mod *n*, every vault holds a full manifest copy, and orders are vendor-ready FASTA and CSV. |
-| 🔬 **Independent decoder** | FASTA/FASTQ in, SHA-256-verified files out, even on a machine with no copy of the archive (passphrase-protected key file). |
+| 🔬 **Independent decoder** | FASTA/FASTQ in (gzip, quality filtering, reverse-strand reads), SHA-256-verified files out, even on a machine with no copy of the archive. |
+| 🗝️ **One key, decades later** | Each organization keeps a single master key backup. Per-file keys are wrapped under it, and rotation never touches the DNA. |
+| 📦 **Recovery Package** | One ZIP per archive with everything needed to recover it offline: manifest, codec settings, sample sheet, synthesis files and the decoder itself. |
 | 📏 **Storage scale explorer** | See your exact file as printed paper, hard drives and DNA, from a single file to the world's annual data. |
 
 ---
@@ -287,6 +289,45 @@ labeled, for offline demos and as a control.
 
 ---
 
+<a id="long-term-recovery"></a>
+
+## 🗝️ Long-term recovery
+
+A DNA archive is only useful if someone can still read it when Lazarus, its servers and its database
+are long gone. So every archive can be recovered from three things: **the DNA reads, the archive's
+Recovery Package and one master key backup.**
+
+- **Organization master keys.** Each organization gets a versioned 256-bit master key. Every file still
+  gets its own data key, stored only *wrapped* under the master key (AES-256-GCM, bound to the
+  organization, archive, key id and version). The master key leaves the server only as a
+  passphrase-protected backup (scrypt + AES-256-GCM).
+- **Rotation and migration.** Rotating creates a new key version and re-wraps every archive's keys
+  without touching the DNA. Migrating a legacy archive switches it over only after a full decode of
+  its DNA with the wrapped keys passes.
+- **Recovery Package** (`lazarus-recovery-package-v1.zip`, [spec](docs/RECOVERY_PACKAGE.md)). The
+  manifest, file table, codec settings, sample sheet, clean and per-vault synthesis files, the offline
+  decoder with a locked copy of the codec, and SHA256SUMS over everything. It never contains an
+  unwrapped key, and any tampered or unlisted member is rejected.
+- **Laboratory reads.** FASTQ (gzip allowed) with quality filtering (mean Phred below 7 is dropped),
+  reads with ambiguous bases removed, and reverse-strand reads recognized by checking each consensus
+  strand's checksum in both orientations. Reports separate *simulated reads*, *laboratory-format
+  reads* and *physical recovery*, and state that physical recovery has not been demonstrated.
+
+```bash
+cd decoder && python -m venv .venv && .venv/bin/pip install -r requirements.lock
+.venv/bin/python -m lazarus.offline_decode \
+    --recovery-package ../lazarus-recovery-package-v1.zip \
+    --reads-sheet lab_samples.csv \
+    --master-key organization-master-key.json \
+    --output ./recovered
+```
+
+Exit code 0 means PASS. The passphrase comes from a hidden prompt or an environment variable, never
+the command line, and `--self-test` checks an install without any key. In this repo the same decoder
+is installed as `uv run lazarus-decode`.
+
+---
+
 ## 🚀 Quickstart
 
 **Requirements:** Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Node 20+, git. API keys are
@@ -334,9 +375,10 @@ Lazarus reports a PASS only when every hash matches. Too much damage gives an ho
 <details>
 <summary><b>Decode on another machine</b></summary>
 
-Export a passphrase-protected key file (**Export keys for independent recovery**, scrypt +
-AES-256-GCM), take the reads FASTA and the non-secret `recovery_bundle.json`, and use **DNA Decoder →
-Independent import** anywhere. The decoder never needs the original workspace.
+Download the archive's **Recovery Package** and your organization's master key backup, then decode
+the reads anywhere: in the **DNA Decoder → Independent import**, or fully offline with the decoder
+shipped inside the package (see [Long-term recovery](#long-term-recovery)). Legacy archives
+use a passphrase-protected key file instead. The decoder never needs the original workspace.
 
 </details>
 
@@ -347,8 +389,8 @@ Independent import** anywhere. The decoder never needs the original workspace.
 cd lazarus && uv run uvicorn lazarus.api:app --reload --port 8000
 cd web && npm run dev                      # http://localhost:5173/app/, proxies /api to :8000
 
-cd lazarus && uv run pytest -q             # 86 tests
-cd web && npx vitest run && npm run build  # 39 tests
+cd lazarus && uv run pytest -q             # 99 tests
+cd web && npx vitest run && npm run build  # 41 tests
 ```
 
 The tests cover tamper detection, decoding the manifest from the bootstrap spec alone, corrupted
@@ -366,14 +408,14 @@ so no API key is needed.
 |---|---|
 | **User and problem** | Records and compliance teams at pharma companies, banks, law firms and media archives who must keep files readable for 25+ years on media that wears out or goes obsolete within a decade. |
 | **Core claim** | An archived file can be rebuilt byte for byte from DNA reads alone, with no original, no database and no remembered settings, or the decoder states exactly why not. |
-| **Boundary** | Digital simulation: no DNA is made or read. Channel calibrated on real Nanopore reads; decay and costs modeled. Demo archives up to 200 KB; a local key folder stands in for a KMS. |
+| **Boundary** | Digital simulation: no DNA is made or read. Channel calibrated on real Nanopore reads; decay and costs modeled. Demo archives up to 200 KB; a local key folder stands in for a KMS or HSM. |
 | **Correctness** | CRC-16 per strand, CRC-32 per pool, AES-GCM tag and SHA-256 per file. Recovery returns exact bytes or nothing. Design selection uses training seeds; final validation uses held-out seeds that cannot be re-rolled. |
-| **Evidence** | 125 automated tests, plus per-archive recovery reports in JSON and HTML with every step, decoder and hash. |
-| **Interfaces** | React workspace ⇄ FastAPI + live event stream ⇄ deep agent ⇄ tool layer ⇄ DNA codec. FASTA/FASTQ in; vendor-ready FASTA/CSV and verification reports out. |
+| **Evidence** | 140 automated tests, plus per-archive recovery reports in JSON and HTML with every step, decoder and hash. |
+| **Interfaces** | React workspace ⇄ FastAPI + live event stream ⇄ deep agent ⇄ tool layer ⇄ DNA codec. FASTA/FASTQ in; vendor-ready FASTA/CSV, Recovery Packages and verification reports out; `lazarus-decode` on the command line. |
 | **Measurement** | Exact-strand accuracy on held-out real reads, recovery rate over simulated trials, modeled write and read cost, bits per DNA letter. |
-| **Failure behavior** | Missing key ⇒ INCOMPLETE. Wrong key or flipped bit ⇒ GCM rejects. Failed stress test ⇒ redesign and full retest. Failed final held-out test ⇒ no order can be approved. |
+| **Failure behavior** | Missing key ⇒ INCOMPLETE. Wrong key or flipped bit ⇒ GCM rejects. Failed stress test ⇒ redesign and full retest. Failed final held-out test ⇒ no order can be approved. Tampered Recovery Package ⇒ rejected before decoding. |
 | **Reproduction** | The Quickstart above. Works offline with Autopilot. |
-| **Next limit** | Real wet-lab reads (primer trimming, reverse complements), archives beyond 200 KB, a real KMS with user authentication, larger trial counts. |
+| **Next limit** | Physical recovery from synthesized DNA, adapter and primer trimming for lab reads, archives beyond 200 KB, a production KMS with user authentication, larger trial counts. |
 
 ---
 
@@ -390,7 +432,7 @@ so no API key is needed.
 | Simulated vs real Nanopore decoding | within **~3 points** at every read depth |
 | DNA material for 1 TB (215 PB/g benchmark) | **4.65 mg** |
 | Sample archive (Northstar Bio) | **3 of 3** records restored byte-exact from 3 vaults after 50 simulated years |
-| Automated tests | **125** (86 backend, 39 web) |
+| Automated tests | **140** (99 backend, 41 web) |
 
 Decoder figures: 1,996 held-out real Nanopore strands never used for training, averaged over 20
 random read draws per point. Archive results are simulation evidence, not a guarantee of future
@@ -412,13 +454,18 @@ lazarus/
     experiment.py     clean DNA export, reproducible damage simulations
     clustering.py     reference-free read clustering
     decoder.py        standalone decoder, verdicts, reports, key files
+    offline_decode.py lazarus-decode, the offline command-line decoder
+    orgkeys.py        master keys, envelope wrapping, passphrase-protected backups
+    orgs.py           organizations: key custody, backup, restore, rotation, migration
+    recovery_package.py  builds each archive's Long-Term Recovery Package
+    package_format.py    Recovery Package reader/writer with integrity checks
     candidates.py     frozen designs, train-seed screening, held-out validation
     learned.py        learned (risk-model) encoding experiments
     api.py            FastAPI + live events; serves the homepage and workspace
   dna_codec/        bundled DNA codec: Fountain encoder, channel simulators, decoders
   checkpoints/      pre-trained CNN decoder
   profiles/         calibrated Nanopore and Illumina channel profiles
-  tests/            86 backend tests
+  tests/            99 backend tests
 web/                React business workspace (/app): archives, wizard, decoder, 3D helix
 site/               scrolling homepage (/)
 supabase/           optional cloud storage migrations
@@ -455,9 +502,11 @@ used unchanged, and the homepage in `site/` is adapted from the same project's s
   storage decay is extrapolated and always labeled "modeled".
 - Costs use placeholder prices and are always labeled "modeled".
 - Recovery rates come from small trial counts. One PASS is one trial, not a reliability guarantee.
-- This is a local demo, not a compliance certification. Keys live in a local folder that simulates a
-  KMS, and the server has no user authentication: don't upload sensitive files or expose it to a
-  network.
+- Recovery Packages have been tested on simulated and laboratory-format reads, never on reads from
+  synthesized DNA, and the synthesis requirements have not been validated with a provider.
+- This is a local demo, not a compliance certification. Master keys live in a local folder that
+  simulates a KMS. Only organization key operations need a token; archive pages have no user
+  authentication, so don't upload sensitive files or expose the server to a network.
 
 ---
 
@@ -467,6 +516,7 @@ used unchanged, and the homepage in `site/` is adapted from the same project's s
 [Encoder & decoder deep dive](docs/ENCODER_DECODER_DEEP_DIVE.md) ·
 [DNA from zero](docs/BIOLOGY.md) ·
 [Bootstrap spec](docs/BOOTSTRAP.md) ·
+[Recovery Package spec](docs/RECOVERY_PACKAGE.md) ·
 [Deep agents demo](docs/DEEPAGENTS_DEMO.md) ·
 [Learned archives](docs/LEARNED_ARCHIVES.md) ·
 [3D DNA viewer](docs/VISUAL_DNA.md) ·

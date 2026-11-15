@@ -14,7 +14,7 @@ from pathlib import Path
 from . import store
 from .persistence import get_cloud
 
-MANIFEST_POOL = "MANIFEST"
+from .manifest import MANIFEST_POOL  # noqa: E402  (kept here for existing imports)
 
 
 def vault_dir(job_dir: Path, vault_id: int) -> Path:

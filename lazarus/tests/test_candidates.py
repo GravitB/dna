@@ -39,3 +39,23 @@ def test_candidate_rejects_changed_inputs(monkeypatch, tmp_path):
     store.update(jid, lambda j: j['policy'].update(tech='illumina'))
     with pytest.raises(ValueError, match='inputs'):
         candidates.load(jid, summary['id'])
+
+
+def test_manifest_check_pools_every_surviving_location_copy():
+    """Each location stores its own manifest copy; selection must read them like the recovery drill
+    does (pool decoded strands until the manifest decodes), not judge the archive on one copy."""
+    from lazarus import candidates, manifest
+    man = {"format": "lazarus-manifest-v1", "pools": {"pool-0000": {"n": 1}}, "files": {"a": {"sha256": "x" * 64}}}
+    strands = manifest.encode_manifest(man)
+
+    class ThirdPerCopy:  # copy k only yields every third strand, starting at k; error-free reads
+        @staticmethod
+        def simulate(s, profile, seed):
+            k = (seed - 100 - 17) // 7919
+            return [[x] if i % 3 == k else [] for i, x in enumerate(s)]
+
+    assert not candidates.manifest_recovered(strands, man, ThirdPerCopy, None, 100, 1)
+    assert candidates.manifest_recovered(strands, man, ThirdPerCopy, None, 100, 3)
+    assert candidates.surviving_copies(3, "normal") == 3
+    assert candidates.surviving_copies(3, "vault_loss") == 2
+    assert candidates.surviving_copies(1, "vault_loss") == 1
